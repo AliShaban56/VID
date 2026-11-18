@@ -581,6 +581,11 @@ export async function handleRequest(req, res) {
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
       return res.end(script);
     }
+    if (req.method === "GET" && url.pathname === "/agnes-settings.js") {
+      const script = await readFile(path.join(root, "agnes-settings.js"));
+      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+      return res.end(script);
+    }
     if (req.method !== "GET" || !["/", "/index.html"].includes(url.pathname)) return json(res, 404, { error: "الصفحة غير موجودة." });
     const html = await readFile(path.join(root, "index.html"));
     res.writeHead(200, { "content-type": "text/html; charset=utf-8", "x-content-type-options": "nosniff", "referrer-policy": "strict-origin-when-cross-origin" });
