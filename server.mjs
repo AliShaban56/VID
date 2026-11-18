@@ -153,6 +153,7 @@ async function kieRequest(pathname, payload) {
  const agnesCooldowns = new Map();
  const agnesInvalidKeys = new Set();
  async function loadAgnesKeys() {
+   await db.execute("CREATE TABLE IF NOT EXISTS agnes_api_keys (id INTEGER PRIMARY KEY CHECK (id = 1), secret TEXT NOT NULL, created_at TEXT NOT NULL)");
    await db.execute("CREATE TABLE IF NOT EXISTS agnes_multi_keys (id TEXT PRIMARY KEY, label TEXT NOT NULL, secret TEXT NOT NULL, created_at TEXT NOT NULL)");
    const legacy = (await db.execute("SELECT secret, created_at FROM agnes_api_keys WHERE id = 1")).rows[0];
    const current = (await db.execute("SELECT id, label, secret FROM agnes_multi_keys ORDER BY created_at ASC")).rows;
@@ -166,11 +167,17 @@ async function kieRequest(pathname, payload) {
    const now=Date.now();
    return agnesKeys.map(k=>({id:k.id,label:k.label,masked:"••••"+k.secret.slice(-4),status:agnesInvalidKeys.has(k.id)?"invalid":(agnesCooldowns.get(k.id)>now?"cooldown":"ready"),retryIn:Math.max(0,Math.ceil(((agnesCooldowns.get(k.id)||0)-now)/1000))}));
  }
+ async function nextAgnesKeyIndex(targetDb,count){
+   await targetDb.execute("CREATE TABLE IF NOT EXISTS agnes_key_rotation (id INTEGER PRIMARY KEY CHECK (id = 1), next_index INTEGER NOT NULL DEFAULT 0)");
+   await targetDb.execute("INSERT OR IGNORE INTO agnes_key_rotation (id,next_index) VALUES (1,0)");
+   const result=await targetDb.execute({sql:"UPDATE agnes_key_rotation SET next_index=(next_index+1)%? WHERE id=1 RETURNING (next_index+?-1)%? AS assigned_index",args:[count,count,count]});
+   return Number(result.rows[0]?.assigned_index||0);
+ }
  async function agnesRequest(pathname, payload, {retryNetwork=false}={}) {
    if (!db || usingLocalDb) throw Object.assign(new Error("Turso unavailable for Agnes key retrieval."),{status:503});
    await loadAgnesKeys();
    if(!agnesKeys.length) throw Object.assign(new Error("أضف مفتاح Agnes AI واحدًا على الأقل من الإعدادات."),{status:409});
-   const start=await nextKieKeyIndex(db,agnesKeys.length);
+   const start=await nextAgnesKeyIndex(db,agnesKeys.length);
    const order=agnesKeys.map((_,i)=>agnesKeys[(start+i)%agnesKeys.length]);
    const available=order.filter(k=>!agnesInvalidKeys.has(k.id)&&((agnesCooldowns.get(k.id)||0)<=Date.now()));
    if(!available.length) throw Object.assign(new Error("كل مفاتيح Agnes في مهلة مؤقتة أو غير صالحة. أعد المحاولة لاحقًا."),{status:429});
