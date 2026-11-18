@@ -20,6 +20,7 @@ async function loadEnv() {
 }
 
 await loadEnv();
+const isVercelDeployment = process.env.APP_DEPLOYMENT_TARGET === "vercel" || process.env.VERCEL === "1" || Boolean(process.env.APP_ACCESS_PASSWORD);
 let databaseUrl = process.env.TURSO_DATABASE_URL || "";
 let authToken = process.env.TURSO_AUTH_TOKEN || "";
 let usingLocalDb = !databaseUrl || !authToken;
@@ -33,7 +34,7 @@ const kieCooldowns = new Map();
 const kieInvalidKeys = new Set();
 
 async function loadKieKeys() {
-  if (process.env.VERCEL && process.env.KIE_API_KEYS) {
+  if (isVercelDeployment && process.env.KIE_API_KEYS) {
     try {
       const parsed = JSON.parse(process.env.KIE_API_KEYS);
       kieKeys = Array.isArray(parsed) ? parsed.map((item, index) => typeof item === "string"
@@ -42,7 +43,7 @@ async function loadKieKeys() {
       return;
     } catch { kieKeys = []; return; }
   }
-  if (process.env.VERCEL) { kieKeys = []; return; }
+  if (isVercelDeployment) { kieKeys = []; return; }
   try {
     const parsed = JSON.parse(await readFile(kieKeysFile, "utf8"));
     kieKeys = Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.id === "string" && typeof item.secret === "string") : [];
@@ -201,7 +202,7 @@ const validText = (value, max) => typeof value === "string" && value.trim().leng
 const validPlatforms = (value) => Array.isArray(value) && value.length <= 4 && value.every((p) => typeof p === "string" && p.length <= 40);
 
 async function handleApi(req, res, url) {
-  const isVercel = Boolean(process.env.VERCEL);
+  const isVercel = isVercelDeployment;
   if (isVercel && req.method === "GET" && url.pathname === "/api/auth/status") {
     const configured = Boolean(process.env.APP_ACCESS_PASSWORD && process.env.APP_SESSION_SECRET);
     return json(res, 200, { required: true, configured, authorized: configured && validSession(req) });
@@ -239,7 +240,7 @@ async function handleApi(req, res, url) {
     return json(res, 200, { database: isVercel && usingLocalDb ? "unconfigured" : usingLocalDb ? "local" : "turso", databaseUrl: databaseUrl || "", configIncomplete });
   }
   if (req.method === "POST" && url.pathname === "/api/settings/database") {
-    if (process.env.VERCEL) return json(res, 409, { error: "إعداد قاعدة Turso على Vercel يتم من متغيرات البيئة TURSO_DATABASE_URL وTURSO_AUTH_TOKEN." });
+    if (isVercelDeployment) return json(res, 409, { error: "إعداد قاعدة Turso على Vercel يتم من متغيرات البيئة TURSO_DATABASE_URL وTURSO_AUTH_TOKEN." });
     const body = await readBody(req);
     try {
       await updateDatabaseConnection(body.databaseUrl, body.authToken);
@@ -249,7 +250,7 @@ async function handleApi(req, res, url) {
     }
   }
   if (req.method === "POST" && url.pathname === "/api/settings/database/disconnect") {
-    if (process.env.VERCEL) return json(res, 409, { error: "غيّر أو احذف متغيرات Turso من إعدادات مشروع Vercel." });
+    if (isVercelDeployment) return json(res, 409, { error: "غيّر أو احذف متغيرات Turso من إعدادات مشروع Vercel." });
     try {
       await updateDatabaseConnection("", "");
       return json(res, 200, { ok: true, database: "local" });
@@ -261,7 +262,7 @@ async function handleApi(req, res, url) {
     return json(res, 200, { keys: publicKieKeys(), rotation: "round-robin-with-429-failover" });
   }
   if (req.method === "POST" && url.pathname === "/api/settings/kie-keys") {
-    if (process.env.VERCEL) return json(res, 409, { error: "في نسخة Vercel، أضف قائمة المفاتيح في متغير البيئة KIE_API_KEYS ثم أعد النشر." });
+    if (isVercelDeployment) return json(res, 409, { error: "في نسخة Vercel، أضف قائمة المفاتيح في متغير البيئة KIE_API_KEYS ثم أعد النشر." });
     const body = await readBody(req);
     if (body.action === "add") {
       if (!validText(body.apiKey, 1000) || body.apiKey.trim().length < 16) return json(res, 400, { error: "مفتاح Kie.ai غير صالح أو قصير." });
@@ -313,8 +314,8 @@ async function handleApi(req, res, url) {
     } catch (error) { return json(res, error.status || 502, { error: error.message }); }
   }
   const taskMatch = url.pathname.match(/^\/api\/kie\/jobs\/([^/]+)$/);
-  if (req.method === "GET" && taskMatch) {
-    const taskId = decodeURIComponent(taskMatch[1]);
+  if (req.method === "GET" && (taskMatch || url.pathname === "/api/kie/jobs")) {
+    const taskId = taskMatch ? decodeURIComponent(taskMatch[1]) : url.searchParams.get("taskId");
     if (!validText(taskId, 200)) return json(res, 400, { error: "رقم المهمة غير صالح." });
     try {
       const { result } = await kieRequest(`/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`);
@@ -362,7 +363,7 @@ async function handleApi(req, res, url) {
   return json(res, 404, { error: "المسار غير موجود." });
 }
 
-if (!process.env.VERCEL || !usingLocalDb) await migrate();
+if (!isVercelDeployment || !usingLocalDb) await migrate();
 export async function handleRequest(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
