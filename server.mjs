@@ -306,6 +306,98 @@ async function handleApi(req, res, url) {
     }
     return json(res, 400, { error: "الإجراء غير معروف." });
   }
+  if (req.method === "POST" && url.pathname === "/api/ai/generate-story") {
+    if (!process.env.HEKAYA_OPENAI_API_KEY) return json(res, 503, { error: "أضف HEKAYA_OPENAI_API_KEY في إعدادات Vercel لتفعيل كتابة القصص بالذكاء الاصطناعي." });
+    const body = await readBody(req);
+    const topic = typeof body.topic === "string" ? body.topic.trim() : "";
+    if (topic.length > 1200) return json(res, 400, { error: "الفكرة طويلة جدًا؛ اختصرها إلى 1200 حرف." });
+    const genre = validText(body.genre, 100) ? body.genre : "قصة غموض وتشويق";
+    const dialect = validText(body.dialect, 100) ? body.dialect : "عامية مصرية بسيطة";
+    const duration = validText(body.duration, 40) ? body.duration : "45 ثانية";
+    const prompt = [
+      "أنت كاتب ومخرج محتوى قصصي محترف لقناة عربية تصنع فيديوهات قصيرة عمودية.",
+      "ابتكر قصة أصلية جذابة وقابلة للتصوير، وليست قالبًا عامًا. ابدأ بخطاف قوي خلال أول ثانيتين، ثم تصاعد واضح، ومفاجأة أو لحظة مؤثرة، ونهاية قوية تدعو للتفاعل دون ابتذال.",
+      "اكتب باللهجة المطلوبة، والتزم بالمدة المطلوبة. قسم النص إلى مشاهد قصيرة مع توجيه بصري وصوتي واضح. لا تدّعِ أن القصة حقيقة إذا كانت خيالية.",
+      "أعد JSON فقط وفق المخطط المحدد.",
+      "الفكرة/الموضوع: " + (topic || "اختر أنت فكرة جديدة وغير مكررة تناسب الجمهور العربي."),
+      "النوع: " + genre,
+      "اللهجة: " + dialect,
+      "المدة: " + duration
+    ].join("\n");
+    try {
+      const response = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${process.env.HEKAYA_OPENAI_API_KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: process.env.HEKAYA_STORY_MODEL || "gpt-6.1-sol",
+          input: prompt,
+          max_output_tokens: 2600,
+          text: { format: { type: "json_schema", name: "hekaya_story", strict: true, schema: {
+            type: "object",
+            properties: {
+              title: { type: "string" },
+              hook: { type: "string" },
+              story: { type: "string" },
+              caption: { type: "string" },
+              hashtags: { type: "array", items: { type: "string" } },
+              visual_direction: { type: "string" }
+            },
+            required: ["title", "hook", "story", "caption", "hashtags", "visual_direction"],
+            additionalProperties: false
+          } } }
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const message = data?.error?.message || "تعذر توليد القصة من خدمة الذكاء الاصطناعي.";
+        return json(res, response.status === 401 ? 401 : response.status === 429 ? 429 : 502, { error: message });
+      }
+      const outputText = (data.output || []).flatMap((item) => item.content || []).filter((item) => item.type === "output_text").map((item) => item.text).join("");
+      if (!outputText) return json(res, 502, { error: "خدمة الذكاء الاصطناعي لم ترجع نص القصة." });
+      const story = JSON.parse(outputText);
+      if (!validText(story.title, 180) || !validText(story.story, 30000)) return json(res, 502, { error: "القصة الناتجة غير مكتملة؛ حاول مرة أخرى." });
+      return json(res, 200, { ...story, model: data.model || process.env.HEKAYA_STORY_MODEL || "gpt-6.1-sol" });
+    } catch (error) {
+      return json(res, error.status || 502, { error: error instanceof SyntaxError ? "تعذر قراءة تنسيق القصة؛ أعد المحاولة." : "تعذر الاتصال بخدمة كتابة القصص." });
+    }
+  }
+  if (req.method === "POST" && url.pathname === "/api/github/publish-story") {
+    if (!process.env.HEKAYA_GITHUB_TOKEN) return json(res, 503, { error: "أضف HEKAYA_GITHUB_TOKEN في Vercel لتفعيل إرسال القصص إلى GitHub." });
+    const body = await readBody(req);
+    if (!validText(body.title, 180) || !validText(body.story, 30000)) return json(res, 400, { error: "العنوان أو نص القصة غير صالح." });
+    const id = randomUUID();
+    const slug = body.title.trim().toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 60) || "hekaya-story";
+    const filePath = `content-inbox/${new Date().toISOString().slice(0,10)}-${slug}-${id.slice(0,8)}.json`;
+    const document = {
+      id, title: body.title.trim(), topic: typeof body.topic === "string" ? body.topic.slice(0,1200) : "",
+      story: body.story, caption: typeof body.caption === "string" ? body.caption.slice(0,3000) : "",
+      hashtags: Array.isArray(body.hashtags) ? body.hashtags.filter(x => typeof x === "string").slice(0,20) : [],
+      visual_direction: typeof body.visual_direction === "string" ? body.visual_direction.slice(0,3000) : "",
+      platforms: validPlatforms(body.platforms) ? body.platforms : [],
+      source: "hekaya-studio", status: "ready_for_review", created_at: new Date().toISOString()
+    };
+    try {
+      const gh = await fetch(`https://api.github.com/repos/AliShaban56/VID/contents/${filePath}`, {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${process.env.HEKAYA_GITHUB_TOKEN}`,
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          message: `Add story to publishing inbox: ${body.title.trim().slice(0,70)}`,
+          content: Buffer.from(JSON.stringify(document, null, 2), "utf8").toString("base64"),
+          branch: "main"
+        })
+      });
+      const result = await gh.json();
+      if (!gh.ok) return json(res, gh.status === 401 || gh.status === 403 ? 502 : 502, { error: gh.status === 404 ? "المستودع أو الفرع غير متاح للمفتاح. راجع صلاحية Contents: Read and write." : (result?.message || "تعذر إرسال القصة إلى GitHub.") });
+      return json(res, 201, { ok: true, path: filePath, commit: result.commit?.sha || "", url: result.content?.html_url || "" });
+    } catch {
+      return json(res, 502, { error: "تعذر الاتصال بـ GitHub. حاول مرة أخرى." });
+    }
+  }
   if (req.method === "POST" && url.pathname === "/api/kie/images") {
     const body = await readBody(req);
     const aspect = ["9:16", "16:9", "1:1"].includes(body.aspectRatio) ? body.aspectRatio : "9:16";
