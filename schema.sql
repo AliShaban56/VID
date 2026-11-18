@@ -33,3 +33,9 @@ CREATE TABLE IF NOT EXISTS kie_api_keys (
 );
 
 CREATE INDEX IF NOT EXISTS kie_api_keys_created_at_idx ON kie_api_keys(created_at);
+
+CREATE TABLE IF NOT EXISTS social_platform_preferences (
+  platform TEXT PRIMARY KEY,
+  auto_publish INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
