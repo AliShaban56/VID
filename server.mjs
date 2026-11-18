@@ -515,7 +515,7 @@ export async function handleRequest(req, res) {
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
       return res.end(script);
     }
-    const ffmpegAsset = url.pathname.match(/^\\/ffmpeg\\/(worker|const|errors)\\.js$/);
+    const ffmpegAsset = url.pathname.match(/^\/ffmpeg\/(worker|const|errors)\.js$/);
     if (req.method === "GET" && ffmpegAsset) {
       const upstream = await fetch(`https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/${ffmpegAsset[1]}.js`);
       if (!upstream.ok) return json(res, 502, { error: "تعذر تحميل مكوّن محرك المونتاج." });
