@@ -11,9 +11,9 @@ const json = (res, status, body, extra = {}) => {
 };
 const textResult = (value, isError = false) => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }], ...(isError ? { isError: true } : {}) });
 const tools = [
-  { name: "hekaya_generate_image", description: "Generate a vertical story image with the configured Kie.ai account.", inputSchema: { type: "object", properties: { prompt: { type: "string", maxLength: 4000 }, aspectRatio: { type: "string", enum: ["9:16", "16:9", "1:1"] } }, required: ["prompt"], additionalProperties: false }, _meta: { securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }] } },
+  { name: "hekaya_generate_image", description: "Generate a vertical story image with the configured Agnes AI account and automatic key rotation.", inputSchema: { type: "object", properties: { prompt: { type: "string", maxLength: 4000 }, aspectRatio: { type: "string", enum: ["9:16", "16:9", "1:1"] } }, required: ["prompt"], additionalProperties: false }, _meta: { securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }] } },
   { name: "hekaya_generate_video", description: "Animate a generated image into an 8-second vertical video. Supply a public HTTPS image URL.", inputSchema: { type: "object", properties: { prompt: { type: "string", maxLength: 4000 }, imageUrl: { type: "string", maxLength: 2000 } }, required: ["prompt", "imageUrl"], additionalProperties: false }, _meta: { securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }] } },
-  { name: "hekaya_check_generation", description: "Check a Kie.ai image or video generation task and retrieve its result URLs.", inputSchema: { type: "object", properties: { taskId: { type: "string", maxLength: 200 } }, required: ["taskId"], additionalProperties: false }, _meta: { securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }] } },
+  { name: "hekaya_check_generation", description: "Check an Agnes AI video generation task and retrieve its result URL.", inputSchema: { type: "object", properties: { taskId: { type: "string", maxLength: 200 } }, required: ["taskId"], additionalProperties: false }, _meta: { securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }] } },
   { name: "hekaya_save_draft", description: "Save a story draft in Hekaya Studio.", inputSchema: { type: "object", properties: { title: { type: "string", maxLength: 160 }, topic: { type: "string", maxLength: 2000 }, story: { type: "string", maxLength: 30000 }, platforms: { type: "array", items: { type: "string", maxLength: 40 }, maxItems: 4 } }, required: ["title", "topic", "story"], additionalProperties: false }, _meta: { securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }] } },
   { name: "hekaya_list_drafts", description: "List the latest saved story drafts in Hekaya Studio.", inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 30 } }, additionalProperties: false }, _meta: { securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }] } }
 ];
@@ -62,38 +62,30 @@ async function getDb() {
   if (!url || !token) throw new Error("Hekaya database is not configured.");
   return createClient({ url, authToken: token });
 }
-async function getKieKeys(db) {
-  let keys = [];
-  try {
-    const result = await db.execute("SELECT id, secret FROM kie_api_keys ORDER BY created_at ASC");
-    keys = result.rows.map((r) => ({ id: String(r.id), secret: String(r.secret) }));
-  } catch {}
-  if (!keys.length && process.env.KIE_API_KEYS) {
-    const parsed = JSON.parse(process.env.KIE_API_KEYS);
-    keys = Array.isArray(parsed) ? parsed.map((v, i) => typeof v === "string" ? ({ id: "env-" + i, secret: v }) : ({ id: v.id || "env-" + i, secret: v.secret })).filter((v) => typeof v.secret === "string" && v.secret.length) : [];
-  }
-  if (!keys.length) throw new Error("No Kie.ai key is configured in Hekaya.");
+async function getAgnesKeys(db) {
+  await db.execute("CREATE TABLE IF NOT EXISTS agnes_multi_keys (id TEXT PRIMARY KEY, label TEXT NOT NULL, secret TEXT NOT NULL, created_at TEXT NOT NULL)");
+  const result = await db.execute("SELECT id, secret FROM agnes_multi_keys ORDER BY created_at ASC");
+  const keys = result.rows.map((r) => ({ id: String(r.id), secret: String(r.secret) }));
+  if (!keys.length) throw new Error("No Agnes AI key is configured in Hekaya. Add one in Settings.");
   return keys;
 }
-async function nextKieKeyIndex(db, count) {
-  await db.execute("CREATE TABLE IF NOT EXISTS kie_key_rotation (id INTEGER PRIMARY KEY CHECK (id = 1), next_index INTEGER NOT NULL DEFAULT 0)");
-  await db.execute("INSERT OR IGNORE INTO kie_key_rotation (id, next_index) VALUES (1, 0)");
-  const result = await db.execute({ sql: "UPDATE kie_key_rotation SET next_index = (next_index + 1) % ? WHERE id = 1 RETURNING (next_index + ? - 1) % ? AS assigned_index", args: [count, count, count] });
+async function nextAgnesKeyIndex(db, count) {
+  await db.execute("CREATE TABLE IF NOT EXISTS agnes_key_rotation (id INTEGER PRIMARY KEY CHECK (id = 1), next_index INTEGER NOT NULL DEFAULT 0)");
+  await db.execute("INSERT OR IGNORE INTO agnes_key_rotation (id, next_index) VALUES (1, 0)");
+  const result = await db.execute({ sql: "UPDATE agnes_key_rotation SET next_index = (next_index + 1) % ? WHERE id = 1 RETURNING (next_index + ? - 1) % ? AS assigned_index", args: [count, count, count] });
   return Number(result.rows[0]?.assigned_index || 0);
 }
-async function kieCreate(db, model, input) {
-  const keys = await getKieKeys(db);
-  const start = await nextKieKeyIndex(db, keys.length);
+async function agnesRequest(db, pathname, payload) {
+  const keys = await getAgnesKeys(db);
+  const start = await nextAgnesKeyIndex(db, keys.length);
   const ordered = keys.map((_, index) => keys[(start + index) % keys.length]);
-  let last = "Kie.ai request failed";
+  let last = "Agnes AI request failed";
   for (const key of ordered) {
-    const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", { method: "POST", headers: { Authorization: "Bearer " + key.secret, "Content-Type": "application/json" }, body: JSON.stringify({ model, input }) });
+    const response = await fetch("https://apihub.agnes-ai.com" + pathname, { method: payload === undefined ? "GET" : "POST", headers: { authorization: "Bearer " + key.secret, "content-type": "application/json" }, ...(payload === undefined ? {} : { body: JSON.stringify(payload) }) });
     const data = await response.json().catch(() => ({}));
-    if (response.ok && Number(data.code) === 200 && data.data?.taskId) return { taskId: data.data.taskId, model, keyLabel: key.id };
-    last = data.msg || last;
-    const code = Number(data.code || response.status);
-    const insufficientCredits = code === 402 || /insufficient credits|credits insufficient|not enough credits|insufficient balance/i.test(String(data.msg || data.message || ""));
-    if (![401, 429].includes(code) && !insufficientCredits) break;
+    if (response.ok) return { data, keyId: key.id };
+    last = data.error?.message || data.message || String(data.error || "Agnes AI request failed");
+    if (![401, 403, 402, 429].includes(response.status) && response.status < 500) break;
   }
   throw new Error(last);
 }
@@ -102,27 +94,24 @@ async function callTool(name, args) {
   try {
     if (name === "hekaya_generate_image") {
       if (!valid(args.prompt, 4000)) throw new Error("prompt is required.");
-      const result = await kieCreate(db, "gpt-image-2-6/flare-text-to-image", { prompt: args.prompt.trim(), aspect_ratio: ["9:16", "16:9", "1:1"].includes(args.aspectRatio) ? args.aspectRatio : "9:16", resolution: "1K", quality: "medium", background: "auto", output_format: "png" });
-      return textResult(result);
+      const { data, keyId } = await agnesRequest(db, "/v1/images/generations", { model: "agnes-image-2.5-flash", prompt: args.prompt.trim(), n: 1, size: "1024x1792", extra_body: { ratio: args.aspectRatio === "16:9" ? "16:9" : args.aspectRatio === "1:1" ? "1:1" : "9:16", response_format: "url" } });
+      const imageUrl = data.data?.[0]?.url || data.data?.[0]?.image_url || data.image_url || data.url;
+      if (!imageUrl || !String(imageUrl).startsWith("https://")) throw new Error("Agnes AI did not return a valid HTTPS image URL.");
+      return textResult({ imageUrl, model: "agnes-image-2.5-flash", provider: "Agnes AI", keyId });
     }
     if (name === "hekaya_generate_video") {
       if (!valid(args.prompt, 4000) || !valid(args.imageUrl, 2000) || !/^https:\/\//i.test(args.imageUrl)) throw new Error("prompt and a public HTTPS imageUrl are required.");
-      const result = await kieCreate(db, "grok-imagine-video-1-5-preview", { prompt: args.prompt.trim(), image_urls: [args.imageUrl], aspect_ratio: "9:16", resolution: "480p", duration: 8 });
-      return textResult(result);
+      const { data, keyId } = await agnesRequest(db, "/v1/videos", { model: "agnes-video-2.5-flash", prompt: args.prompt.trim(), mode: "keyframe", first_frame: args.imageUrl, seconds: "8", size: "720P", aspect_ratio: "9:16", n: 1 });
+      const videoId = data.video_id || data.id || data.task_id || data.data?.video_id || data.data?.id || data.data?.task_id;
+      if (!videoId) throw new Error("Agnes AI did not return a video task ID.");
+      return textResult({ taskId: String(videoId), videoId: String(videoId), model: "agnes-video-2.5-flash", provider: "Agnes AI", keyId });
     }
     if (name === "hekaya_check_generation") {
       if (!valid(args.taskId, 200)) throw new Error("taskId is required.");
-      const keys = await getKieKeys(db);
-      let data;
-      for (const key of keys) {
-        const response = await fetch("https://api.kie.ai/api/v1/jobs/recordInfo?taskId=" + encodeURIComponent(args.taskId), { headers: { Authorization: "Bearer " + key.secret } });
-        data = await response.json().catch(() => ({}));
-        if (response.ok && Number(data.code) === 200) break;
-      }
-      const task = data?.data || {};
-      let resultJson = {};
-      try { resultJson = typeof task.resultJson === "string" ? JSON.parse(task.resultJson) : (task.resultJson || {}); } catch {}
-      return textResult({ taskId: args.taskId, state: task.state || "unknown", progress: task.progress ?? null, resultUrls: resultJson.resultUrls || [], failMsg: task.failMsg || "" });
+      const { data } = await agnesRequest(db, "/agnesapi?video_id=" + encodeURIComponent(args.taskId) + "&model_name=agnes-video-2.5-flash", undefined);
+      const task = data.data || data;
+      const videoUrl = task.url || task.video_url || task.videoUrl || null;
+      return textResult({ taskId: args.taskId, state: task.status || "processing", progress: task.progress ?? null, videoUrl, resultUrls: videoUrl ? [videoUrl] : [], failMsg: task.error || task.message || "" });
     }
     if (name === "hekaya_save_draft") {
       if (!valid(args.title, 160) || !valid(args.topic || "قصة قصيرة", 2000) || !valid(args.story, 30000)) throw new Error("title, topic and story are required.");
@@ -139,7 +128,6 @@ async function callTool(name, args) {
     throw new Error("Unknown tool: " + name);
   } finally { db.close(); }
 }
-
 const html = (res, status, body) => { res.statusCode=status; res.setHeader("content-type","text/html; charset=utf-8"); res.setHeader("cache-control","no-store"); res.end(body); };
 const redirect = (res, url) => { res.statusCode=302; res.setHeader("location",url); res.setHeader("cache-control","no-store"); res.end(); };
 const formBody = async (req) => { let raw=""; for await (const c of req) { raw+=c; if(raw.length>20000) throw new Error("Request too large"); } return Object.fromEntries(new URLSearchParams(raw)); };
