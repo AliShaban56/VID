@@ -23,11 +23,11 @@
   async function refreshTikTokStatus() {
     try {
       const state = await api("/api/tiktok/status");
-      tiktokConnect.hidden = !state.configured;
+      tiktokConnect.hidden = false; tiktokConnect.disabled = !state.configured;
       tiktokConnect.textContent = state.connected ? "تيك توك متصل ✓ " + (state.account || "") : "ربط حساب تيك توك";
       tiktokPublish.hidden = !state.connected;
       tiktokPublish.disabled = !state.connected || !generatedVideoUrl;
-      if (!state.configured) mediaStatus.textContent += " | إعداد TikTok API مطلوب";
+      if (!state.configured) mediaStatus.textContent = "النشر المباشر محتاج إعداد تطبيق TikTok Developer في Vercel (Client Key / Secret / Redirect URL).";
     } catch { tiktokConnect.hidden = true; tiktokPublish.hidden = true; }
   }
   tiktokConnect.addEventListener("click", () => { window.location.href = "/api/tiktok/connect"; });
