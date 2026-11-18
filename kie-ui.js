@@ -12,6 +12,43 @@
   const imageEl = document.querySelector("#kieGeneratedImage");
   const videoEl = document.querySelector("#kieGeneratedVideo");
   let generatedImageUrl = "";
+  let generatedVideoUrl = "";
+  const tiktokConnect = document.createElement("button");
+  tiktokConnect.type = "button"; tiktokConnect.className = "mini-btn"; tiktokConnect.id = "connectTikTok";
+  tiktokConnect.textContent = "ربط تيك توك";
+  const tiktokPublish = document.createElement("button");
+  tiktokPublish.type = "button"; tiktokPublish.className = "mini-btn green"; tiktokPublish.id = "publishTikTok";
+  tiktokPublish.textContent = "نشر الفيديو على تيك توك"; tiktokPublish.hidden = true; tiktokPublish.disabled = true;
+  mediaStatus.after(tiktokConnect, tiktokPublish);
+  async function refreshTikTokStatus() {
+    try {
+      const state = await api("/api/tiktok/status");
+      tiktokConnect.hidden = !state.configured;
+      tiktokConnect.textContent = state.connected ? "تيك توك متصل ✓ " + (state.account || "") : "ربط حساب تيك توك";
+      tiktokPublish.hidden = !state.connected;
+      tiktokPublish.disabled = !state.connected || !generatedVideoUrl;
+      if (!state.configured) mediaStatus.textContent += " | إعداد TikTok API مطلوب";
+    } catch { tiktokConnect.hidden = true; tiktokPublish.hidden = true; }
+  }
+  tiktokConnect.addEventListener("click", () => { window.location.href = "/api/tiktok/connect"; });
+  tiktokPublish.addEventListener("click", async () => {
+    if (!generatedVideoUrl) { toast("ولّد الفيديو الأول"); return; }
+    if (!confirm("تأكيد نشر الفيديو على حساب TikTok المتصل؟")) return;
+    tiktokPublish.disabled = true; tiktokPublish.textContent = "جاري رفع الفيديو إلى TikTok…";
+    try {
+      const captionText = document.querySelector(".generated-meta")?.textContent?.replace(/^وصف النشر:\s*/, "").trim() || "";
+      const caption = captionText || document.querySelector("#story")?.textContent?.trim().slice(0, 1800) || "حكاية جديدة ✨";
+      const result = await api("/api/tiktok/publish", { videoUrl: generatedVideoUrl, caption: caption.slice(0, 2200) });
+      mediaStatus.textContent = result.message || "تم إرسال الفيديو إلى TikTok.";
+      tiktokPublish.textContent = "تم رفع الفيديو ✓";
+      if (typeof toast === "function") toast("TikTok استلم الفيديو؛ تابع حالة المعالجة.");
+    } catch (error) {
+      mediaStatus.textContent = "نشر TikTok: " + error.message;
+      tiktokPublish.textContent = "إعادة محاولة النشر";
+      tiktokPublish.disabled = false;
+    }
+  });
+  refreshTikTokStatus();
 
   const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -140,7 +177,7 @@
       const videoPrompt = `حوّل الصورة إلى فيديو عمودي 9:16 مدته 8 ثوانٍ. حافظ على ملامح الشخصيات والمشهد، بحركة كاميرا سينمائية هادئة. أضف تعليقًا صوتيًا عربيًا مصريًا طبيعيًا بهذه الجملة: ${dialogueForVideo}`;
       const videoTask = await api("/api/kie/videos", { method: "POST", body: JSON.stringify({ prompt: videoPrompt, imageUrl: generatedImageUrl }) });
       const autoVideoUrl = await waitForTask(videoTask.taskId, "جاري توليد الفيديو تلقائيًا", 180);
-      videoEl.src = autoVideoUrl;
+      generatedVideoUrl = autoVideoUrl;\n      videoEl.src = autoVideoUrl;\n      tiktokPublish.disabled = !generatedVideoUrl;\n      refreshTikTokStatus();
       videoEl.hidden = false;
       preview.hidden = false;
       videoEl.load();
@@ -160,7 +197,7 @@
       const prompt = `حوّل الصورة إلى فيديو عمودي 9:16 مدته 8 ثوانٍ. حافظ على ملامح الشخصيات والمشهد، بحركة كاميرا سينمائية هادئة. أضف تعليقًا صوتيًا عربيًا مصريًا طبيعيًا بهذه الجملة: ${dialogue}`;
       const created = await api("/api/kie/videos", { method: "POST", body: JSON.stringify({ prompt, imageUrl: generatedImageUrl }) });
       const videoUrl = await waitForTask(created.taskId, "جاري تجهيز الفيديو", 180);
-      videoEl.src = videoUrl;
+      generatedVideoUrl = videoUrl;\n      videoEl.src = videoUrl;\n      tiktokPublish.disabled = !generatedVideoUrl;\n      refreshTikTokStatus();
       videoEl.hidden = false;
       preview.hidden = false;
       mediaStatus.textContent = "الفيديو جاهز للمعاينة.";
@@ -204,7 +241,7 @@
           await delay(4000);
         }
         if (!finalUrl) throw new Error("التوليد طول أكثر من الوقت المتوقع. جرّب فحص المهمة لاحقًا.");
-        videoEl.src = finalUrl;
+        generatedVideoUrl = finalUrl;\n        videoEl.src = finalUrl;\n        tiktokPublish.disabled = !generatedVideoUrl;\n        refreshTikTokStatus();
         videoEl.hidden = false;
         preview.hidden = false;
         videoEl.load();
