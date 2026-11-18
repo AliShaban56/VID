@@ -6,6 +6,7 @@
   const addButton = document.querySelector("#addKieKey");
   const imageButton = document.querySelector("#generateImage");
   const videoButton = document.querySelector("#generateVideo");
+  const agnesVideoButton = document.querySelector("#generateAgnesVideo");
   const mediaStatus = document.querySelector("#kieMediaStatus");
   const preview = document.querySelector("#kieMediaPreview");
   const imageEl = document.querySelector("#kieGeneratedImage");
@@ -130,6 +131,7 @@
       generatedImageUrl = await waitForTask(created.taskId, "جاري توليد الصورة");
       imageEl.src = generatedImageUrl;
       imageEl.hidden = false;
+      if (agnesVideoButton && !agnesVideoButton.hidden) agnesVideoButton.disabled = false;
       preview.hidden = false;
       mediaStatus.textContent = "الصورة جاهزة — بنبدأ تحويلها لفيديو تلقائيًا…";
       // Automatic image-to-video pipeline: no second button click needed.
@@ -169,6 +171,52 @@
     }
   });
 
+  if (agnesVideoButton) {
+    async function checkAgnesKey() {
+      try {
+        const status = await api("/api/settings/agnes-key");
+        agnesVideoButton.hidden = !status.configured;
+        agnesVideoButton.disabled = !status.configured || !generatedImageUrl;
+      } catch {
+        agnesVideoButton.hidden = true;
+      }
+    }
+    agnesVideoButton.addEventListener("click", async () => {
+      if (!generatedImageUrl) { toast("ولّد الصورة الأول"); return; }
+      agnesVideoButton.disabled = true;
+      const original = agnesVideoButton.textContent;
+      mediaStatus.textContent = "بنرسل الصورة لموديل Agnes Video 2.5 Flash…";
+      try {
+        const storyText = document.querySelector("#story")?.textContent?.trim() || "";
+        const prompt = "Animate the provided first frame into a cinematic vertical 9:16 video, 8 seconds long. Preserve the people, identities, clothes, setting, and art direction from the image. Add subtle natural body motion, facial expression, environmental movement, and a smooth cinematic camera move. No captions, logos, or text. Story context: " + storyText.slice(0, 1200);
+        const created = await api("/api/agnes/videos", { method: "POST", body: JSON.stringify({ prompt, imageUrl: generatedImageUrl }) });
+        let finalUrl = "";
+        for (let attempt = 0; attempt < 150; attempt++) {
+          mediaStatus.textContent = "Agnes بتولّد الفيديو… محاولة " + (attempt + 1) + " من 150";
+          const job = await api("/api/agnes/jobs?videoId=" + encodeURIComponent(created.videoId));
+          const state = String(job.status || "").toLowerCase();
+          if (["completed", "complete", "success", "succeeded", "finished"].includes(state)) {
+            finalUrl = job.videoUrl;
+            if (!finalUrl) throw new Error("المهمة اكتملت لكن Agnes لم ترجع رابط الفيديو.");
+            break;
+          }
+          if (["failed", "fail", "error"].includes(state)) throw new Error(job.error || "Agnes فشلت في توليد الفيديو.");
+          await delay(4000);
+        }
+        if (!finalUrl) throw new Error("التوليد طول أكثر من الوقت المتوقع. جرّب فحص المهمة لاحقًا.");
+        videoEl.src = finalUrl;
+        videoEl.hidden = false;
+        preview.hidden = false;
+        videoEl.load();
+        mediaStatus.textContent = "فيديو Agnes جاهز للعرض! (720p)";
+      } catch (error) {
+        mediaStatus.textContent = "Agnes: " + error.message;
+      } finally {
+        agnesVideoButton.disabled = false;
+      }
+    });
+    checkAgnesKey();
+  }
   refreshKeys();
 })();
 
