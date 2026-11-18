@@ -27,7 +27,7 @@ async function save(list) {
 }
 function browserPath() {
   const candidates = process.platform === "win32"
-    ? [process.env.PROGRAMFILES + "\\Google\\Chrome\\Application\\chrome.exe", process.env["PROGRAMFILES(X86)"] + "\\Google\\Chrome\\Application\\chrome.exe", process.env.LOCALAPPDATA + "\\Google\\Chrome\\Application\\chrome.exe"]
+    ? [(process.env.PROGRAMFILES ? process.env.PROGRAMFILES + "\\Google\\Chrome\\Application\\chrome.exe" : null), (process.env["PROGRAMFILES(X86)"] ? process.env["PROGRAMFILES(X86)"] + "\\Google\\Chrome\\Application\\chrome.exe" : null), (process.env.LOCALAPPDATA ? process.env.LOCALAPPDATA + "\\Google\\Chrome\\Application\\chrome.exe" : null)]
     : process.platform === "darwin"
       ? ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"]
       : ["google-chrome", "chromium", "chromium-browser"];
