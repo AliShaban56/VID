@@ -277,10 +277,12 @@ async function handleApi(req, res, url) {
     }
   }
   if (req.method === "GET" && url.pathname === "/api/settings/kie-keys") {
+    if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
     return json(res, 200, { keys: publicKieKeys(), rotation: "round-robin-with-429-failover" });
   }
   if (req.method === "POST" && url.pathname === "/api/settings/kie-keys") {
     if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "قاعدة Turso غير متصلة؛ لا يمكن حفظ مفاتيح Kie.ai." });
+    if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
     const body = await readBody(req);
     if (body.action === "add") {
       if (!validText(body.apiKey, 1000) || body.apiKey.trim().length < 16) return json(res, 400, { error: "مفتاح Kie.ai غير صالح أو قصير." });
