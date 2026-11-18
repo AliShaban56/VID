@@ -4,6 +4,7 @@ import { createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createClient } from "@libsql/client";
+import mcpHandler from "./api/mcp.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 3000);
@@ -507,6 +508,7 @@ if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
 export async function handleRequest(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
+    if (url.pathname === "/api/mcp" || url.pathname.startsWith("/api/mcp/")) return await mcpHandler(req, res);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
     if (req.method === "GET" && url.pathname === "/auth-ui.js") {
       const script = await readFile(path.join(root, "auth-ui.js"));
