@@ -473,7 +473,7 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (!validText(body.token, 4096) || !validText(body.userId, 128) || !validText(body.videoUrl, 4096) || !validText(body.caption, 3000) || !validText(body.schedule, 64)) return json(res, 400, { error: "راجع بيانات Metricool والنص ورابط الفيديو وموعد النشر." });
     if (!body.videoUrl.startsWith("https://")) return json(res, 400, { error: "رابط الفيديو لازم يكون HTTPS." });
-    const scheduleDate = new Date(body.schedule);
+    const scheduleDate = new Date(body.schedule + "+02:00");
     if (!Number.isFinite(scheduleDate.getTime()) || scheduleDate.getTime() <= Date.now()) return json(res, 400, { error: "موعد النشر لازم يكون في المستقبل." });
     const cairoDate = new Intl.DateTimeFormat("sv-SE", { timeZone: "Africa/Cairo", year: "numeric", month: "2-digit", day: "2-digit" }).format(scheduleDate);
     const cairoTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Africa/Cairo", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(scheduleDate);
