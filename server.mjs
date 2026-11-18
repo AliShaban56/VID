@@ -604,45 +604,11 @@ async function handleApi(req, res, url) {
   if (req.method === "GET" && url.pathname === "/api/agnes/jobs") {
     const videoId = url.searchParams.get("videoId");
     if (!validText(videoId, 200)) return json(res, 400, { error: "رقم المهمة غير صالح." });
-    if (!db || usingLocalDb) return json(res, 503, { error: "قاعدة البيانات غير متصلة لإحضار مفتاح Agnes." });
-    try {
-      const stored = await db.execute("SELECT secret FROM agnes_api_keys WHERE id = 1");
-      const apiKey = stored.rows[0]?.secret;
-      if (!apiKey) return json(res, 409, { error: "مفتاح Agnes غير محفوظ." });
-      const model = "agnes-video-2.5-flash";
-      const upstream = await fetch("https://apihub.agnes-ai.com/agnesapi?video_id=  if (req.method === "GET" && url.pathname === "/api/agnes/jobs") {
-    const videoId = url.searchParams.get("videoId");
-    if (!validText(videoId, 200)) return json(res, 400, { error: "رقم المهمة غير صالح." });
     try {
       const { data, keyId } = await agnesRequest("/agnesapi?video_id=" + encodeURIComponent(videoId) + "&model_name=agnes-video-2.5-flash", undefined, { retryNetwork: true });
       const task = data.data || data;
       return json(res, 200, { videoId, status: task.status || "processing", videoUrl: task.url || task.video_url || task.videoUrl || null, progress: task.progress ?? null, error: task.error || task.message || "", provider: "Agnes AI", keyId });
     } catch (error) { return json(res, error.status || 502, { error: "تعذر فحص مهمة Agnes: " + error.message }); }
-  }
-  if (req.method === "POST" && url.pathname === "/api/kie/videos") {
-    const body = await readBody(req);
-    if (!validText(body.prompt, 4000) || typeof body.imageUrl !== "string" || !body.imageUrl.startsWith("https://")) return json(res, 400, { error: "نحتاج وصف الفيديو ورابط الصورة الناتجة." });
-    try {
-      const { result } = await kieRequest("/api/v1/jobs/createTask", {
-        model: "grok-imagine-video-1-5-preview",
-        input: { prompt: body.prompt.trim(), image_urls: [body.imageUrl], aspect_ratio: "9:16", resolution: "480p", duration: 8 },
-      });
-      const taskId = result?.data?.taskId;
-      if (!taskId) return json(res, 502, { error: "لم ترجع Kie.ai رقم مهمة الفيديو." });
-      return json(res, 202, { taskId, model: "grok-imagine-video-1-5-preview" });
-    } catch (error) { return json(res, error.status || 502, { error: error.message }); }
-  }
-  const taskMatch = url.pathname.match(/^\/api\/kie\/jobs\/([^/]+)$/);
-  if (req.method === "GET" && (taskMatch || url.pathname === "/api/kie/jobs")) {
-    const taskId = taskMatch ? decodeURIComponent(taskMatch[1]) : url.searchParams.get("taskId");
-    if (!validText(taskId, 200)) return json(res, 400, { error: "رقم المهمة غير صالح." });
-    try {
-      const { result } = await kieRequest(`/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`);
-      const data = result?.data || {};
-      let resultData = {};
-      try { resultData = typeof data.resultJson === "string" ? JSON.parse(data.resultJson) : (data.resultJson || {}); } catch {}
-      return json(res, 200, { taskId, state: data.state || "unknown", progress: data.progress ?? null, resultUrls: resultData.resultUrls || [], failMsg: data.failMsg || "" });
-    } catch (error) { return json(res, error.status || 502, { error: error.message }); }
   }
   if (req.method === "GET" && url.pathname === "/api/drafts") {
     const result = await db.execute("SELECT id, title, topic, story, platforms_json, created_at FROM drafts ORDER BY created_at DESC LIMIT 100");
