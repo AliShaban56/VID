@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>حكاية — تحكم الوكيل الذكي</title>
+<style>
+:root{font-family:system-ui,Arial,sans-serif;color:#17221d;background:#f5f7f3}*{box-sizing:border-box}body{margin:0;padding:20px}.wrap{max-width:760px;margin:30px auto}.card{background:white;border:1px solid #e4ebe5;border-radius:20px;padding:24px;box-shadow:0 10px 35px #1835250d}h1{margin:0 0 8px;font-size:25px}.sub{color:#65736a;line-height:1.8}.status{padding:12px;border-radius:12px;background:#f1f5f1;margin:18px 0}.btns{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}button{border:0;border-radius:11px;padding:12px 16px;font-weight:700;cursor:pointer}.primary{background:#176b4a;color:white}.danger{background:#fff0ef;color:#a13b34}.neutral{background:#edf3ed}.token{word-break:break-all;font-family:monospace;padding:14px;background:#f3f6f1;border-radius:12px;margin-top:12px}.hidden{display:none}.small{font-size:12px;color:#65736a;line-height:1.7}a{color:#176b4a}
+</style>
+</head>
+<body><main class="wrap"><div class="card">
+<h1>تحكم الوكيل الذكي</h1><p class="sub">صفحة مستقلة لإعداد صلاحيات الوكيل وإدارة مفتاح الوصول — بدون الاعتماد على قائمة التنقل في الاستوديو.</p>
+<div id="status" class="status">جارٍ فحص حالة الإعداد…</div>
+<div id="tokenBox" class="hidden"><p><strong>المفتاح الجديد (بيظهر مرة واحدة فقط):</strong></p><div id="token" class="token"></div><div class="btns"><button id="copy" class="neutral">نسخ المفتاح</button></div><p class="small">احتفظ بالمفتاح في مكان آمن ولا ترسله في المحادثات. إغلاق الصفحة يعني عدم إمكانية عرضه مرة أخرى.</p></div>
+<div class="btns"><button id="generate" class="primary">إنشاء / استبدال مفتاح الوكيل</button><button id="revoke" class="danger">إلغاء المفتاح الحالي</button><button id="home" class="neutral">العودة للاستوديو</button></div>
+<hr style="border:0;border-top:1px solid #e6ece6;margin:22px 0">
+<h3>عنوان واجهة الوكيل</h3><div class="token">https://vid-ali-b36b.vercel.app/api/agent</div>
+<p class="small">إنشاء المفتاح يتطلب تسجيل الدخول للاستوديو. إذا ظهرت رسالة Unauthorized، افتح الاستوديو وسجّل الدخول ثم ارجع لهذه الصفحة.</p>
+</div></main>
+<script>
+const statusEl=document.getElementById('status'),box=document.getElementById('tokenBox'),tokenEl=document.getElementById('token');
+async function refresh(){try{const r=await fetch('/api/settings/agent-token',{credentials:'same-origin'});const d=await r.json();if(!r.ok)throw new Error(d.error||'تعذر الفحص');statusEl.textContent=d.configured?'المفتاح مفعّل بالفعل. تاريخ الإنشاء: '+(d.createdAt||'غير معروف')+' — لا يمكن عرض المفتاح الحالي.':'لا يوجد مفتاح وكيل مُنشأ حتى الآن.';}catch(e){statusEl.textContent='تعذر قراءة الإعداد: '+e.message;}}
+document.getElementById('generate').onclick=async()=>{if(!confirm('إنشاء مفتاح جديد؟ سيحل محل أي مفتاح موجود.'))return;try{const r=await fetch('/api/settings/agent-token',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({action:'generate'})});const d=await r.json();if(!r.ok)throw new Error(d.error||'فشل');tokenEl.textContent=d.token;box.classList.remove('hidden');statusEl.textContent='تم إنشاء المفتاح. انسخه الآن واحفظه بأمان.';}catch(e){statusEl.textContent='فشل إنشاء المفتاح: '+e.message;}};
+document.getElementById('revoke').onclick=async()=>{if(!confirm('إلغاء المفتاح الحالي نهائيًا؟'))return;try{const r=await fetch('/api/settings/agent-token',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({action:'revoke'})});const d=await r.json();if(!r.ok)throw new Error(d.error||'فشل');box.classList.add('hidden');tokenEl.textContent='';await refresh();statusEl.textContent='تم إلغاء المفتاح.';}catch(e){statusEl.textContent='تعذر الإلغاء: '+e.message;}};
+document.getElementById('copy').onclick=async()=>{try{await navigator.clipboard.writeText(tokenEl.textContent);statusEl.textContent='تم نسخ المفتاح إلى الحافظة.';}catch{statusEl.textContent='تعذر النسخ تلقائيًا؛ حدّد المفتاح وانسخه يدويًا.'}};
+document.getElementById('home').onclick=()=>location.href='/';
+refresh();
+</script></body></html>
