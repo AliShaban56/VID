@@ -51,3 +51,5 @@ CREATE TABLE IF NOT EXISTS agnes_api_keys (
   secret TEXT NOT NULL,
   created_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS agent_control_tokens (id INTEGER PRIMARY KEY CHECK (id = 1), token_hash TEXT NOT NULL, created_at TEXT NOT NULL);
