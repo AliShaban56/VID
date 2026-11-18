@@ -42,3 +42,9 @@ CREATE TABLE IF NOT EXISTS social_platform_preferences (
 
 CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, platform TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS social_accounts (platform TEXT PRIMARY KEY, account_id TEXT, account_name TEXT, encrypted_tokens TEXT NOT NULL, scopes TEXT NOT NULL DEFAULT '', connected_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS browserbase_contexts (
+  id TEXT PRIMARY KEY,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
