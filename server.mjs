@@ -276,26 +276,6 @@ async function handleApi(req, res, url) {
       return json(res, 500, { error: "تعذر فصل قاعدة البيانات." });
     }
   }
-  if(req.method==="GET"&&url.pathname==="/api/social/oauth/status"){const rows=await db.execute("SELECT platform,account_id,account_name,connected_at FROM social_accounts");const con=Object.fromEntries(rows.rows.map(r=>[r.platform,{connected:true,accountId:r.account_id,accountName:r.account_name,connectedAt:r.connected_at}]));return json(res,200,{platforms:Object.fromEntries(Object.keys(socialProviders).map(p=>[p,{configured:socialConfigured(socialProviders[p]),...(con[p]||{connected:false})}]))})}
-  const start=url.pathname.match(/^\/api\/social\/oauth\/start\/(tiktok|youtube|facebook)$/);if(req.method==="GET"&&start){const p=start[1],cfg=socialProviders[p];if(!socialConfigured(cfg))return json(res,503,{error:"بيانات OAuth غير مضبوطة في Vercel."});try{socialKey()}catch(e){return json(res,503,{error:e.message})}const state=randomUUID(),exp=new Date(Date.now()+600000).toISOString();await db.execute({sql:"INSERT INTO social_oauth_states(state,platform,created_at,expires_at) VALUES(?,?,?,?)",args:[state,p,new Date().toISOString(),exp]});const auth=new URL(cfg.authorize);auth.searchParams.set("client_id",cfg.clientId);auth.searchParams.set("redirect_uri",socialRedirectUri(req,p));auth.searchParams.set("response_type","code");auth.searchParams.set("state",state);auth.searchParams.set("scope",cfg.scopes);if(p==="tiktok")auth.searchParams.set("client_key",cfg.clientId);else{auth.searchParams.set("access_type","offline");auth.searchParams.set("prompt","consent")}return res.writeHead(302,{Location:auth.toString()}).end()}
-  if(req.method==="POST"&&url.pathname==="/api/social/oauth/disconnect"){const b=await readBody(req);if(!Object.keys(socialProviders).includes(b.platform))return json(res,400,{error:"منصة غير صالحة"});await db.execute({sql:"DELETE FROM social_accounts WHERE platform=?",args:[b.platform]});return json(res,200,{ok:true})}
-  if (req.method === "GET" && url.pathname === "/api/settings/social-platforms") {
-    const result = await db.execute("SELECT platform, auto_publish, updated_at FROM social_platform_preferences ORDER BY platform");
-    const settings = Object.fromEntries(result.rows.map((row) => [row.platform, { autoPublish: Boolean(row.auto_publish), updatedAt: row.updated_at }]));
-    return json(res, 200, { platforms: settings, supported: ["tiktok", "youtube", "facebook"] });
-  }
-  if (req.method === "POST" && url.pathname === "/api/settings/social-platforms") {
-    const body = await readBody(req);
-    const allowed = ["tiktok", "youtube", "facebook"];
-    if (!allowed.includes(body.platform) || typeof body.autoPublish !== "boolean") return json(res, 400, { error: "إعداد منصة غير صالح." });
-    const now = new Date().toISOString();
-    try {
-      await db.execute({ sql: "INSERT INTO social_platform_preferences (platform, auto_publish, updated_at) VALUES (?, ?, ?) ON CONFLICT(platform) DO UPDATE SET auto_publish=excluded.auto_publish, updated_at=excluded.updated_at", args: [body.platform, body.autoPublish ? 1 : 0, now] });
-      return json(res, 200, { ok: true, platform: body.platform, autoPublish: body.autoPublish, updatedAt: now });
-    } catch {
-      return json(res, 503, { error: "تعذر حفظ إعداد المنصة في قاعدة البيانات." });
-    }
-  }
   if (req.method === "GET" && url.pathname === "/api/settings/kie-keys") {
     return json(res, 200, { keys: publicKieKeys(), rotation: "round-robin-with-429-failover" });
   }
