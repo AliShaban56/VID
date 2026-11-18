@@ -1,0 +1,18 @@
+(() => {
+ const navSettings = document.querySelector('[data-nav="الإعدادات"]');
+ if (!navSettings) return;
+ const style = document.createElement("style");
+ style.textContent = ".agent-panel{position:fixed;inset:0;background:#17221d66;z-index:30;display:grid;place-items:center;padding:20px}.agent-card{width:min(560px,100%);background:var(--paper,#fff);color:var(--ink,#17221d);border-radius:18px;padding:22px;box-shadow:0 20px 70px #0003}.agent-card h2{margin:0 0 8px}.agent-card p{line-height:1.8;color:var(--muted,#78837b)}.agent-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.agent-actions button{border:1px solid #dce5dc;border-radius:10px;padding:10px 14px;background:#fff;cursor:pointer}.agent-actions .primary{background:#176b4a;color:white;border-color:#176b4a}.agent-token{display:block;word-break:break-all;background:#f3f6f1;padding:12px;border-radius:10px;margin-top:10px;font-family:monospace}.agent-danger{color:#ad443c}.agent-note{font-size:11px!important}";
+ document.head.append(style);
+ async function showPanel(){ if(document.querySelector(".agent-panel"))return;
+  const overlay=document.createElement("div");overlay.className="agent-panel";
+  overlay.innerHTML='<div class="agent-card" dir="rtl"><h2>تحكم الوكيل الذكي</h2><p>مفتاح آمن مخصص لعمليات الإنتاج الآلي. المفتاح لا يظهر مرة أخرى بعد إنشائه، ويمكن إلغاؤه فورًا.</p><div id="agent-state">جارٍ فحص الإعداد…</div><div class="agent-actions"><button class="primary" id="agent-gen">إنشاء مفتاح تحكم</button><button class="agent-danger" id="agent-revoke">إلغاء المفتاح الحالي</button><button id="agent-close">إغلاق</button></div><p class="agent-note">احتفظ بالمفتاح في مدير أسرار آمن. لا تشاركه في محادثة أو ملف عام.</p></div>';
+  document.body.append(overlay); overlay.addEventListener("click",e=>{if(e.target===overlay)overlay.remove()});
+  overlay.querySelector("#agent-close").onclick=()=>overlay.remove();
+  async function status(){const el=overlay.querySelector("#agent-state");try{const r=await fetch("/api/settings/agent-token");const d=await r.json();if(!r.ok)throw Error(d.error||"تعذر قراءة الحالة");el.textContent=d.configured?"مفتاح تحكم موجود — أُنشئ بتاريخ "+(d.createdAt||""):"لا يوجد مفتاح تحكم مفعّل";}catch(err){el.textContent=err.message;}}
+  await status();
+  overlay.querySelector("#agent-gen").onclick=async()=>{if(!confirm("إنشاء مفتاح جديد؟ المفتاح السابق سيتم استبداله."))return;const b=overlay.querySelector("#agent-state");b.textContent="جارٍ الإنشاء…";try{const r=await fetch("/api/settings/agent-token",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"generate"})});const d=await r.json();if(!r.ok)throw Error(d.error||"تعذر الإنشاء");b.innerHTML="تم إنشاء المفتاح. انسخه واحفظه الآن؛ لن يُعرض مرة أخرى.<code class=\"agent-token\"></code>";b.querySelector("code").textContent=d.token;const copy=document.createElement("button");copy.textContent="نسخ المفتاح";copy.onclick=()=>navigator.clipboard.writeText(d.token).then(()=>alert("تم النسخ"));b.append(copy);const base=document.createElement("code");base.className="agent-token";base.textContent="Base URL: "+d.baseUrl;b.append(base);}catch(e){b.textContent=e.message;}};
+  overlay.querySelector("#agent-revoke").onclick=async()=>{if(!confirm("إلغاء مفتاح التحكم الحالي فورًا؟"))return;try{const r=await fetch("/api/settings/agent-token",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"revoke"})});const d=await r.json();if(!r.ok)throw Error(d.error);await status();}catch(e){overlay.querySelector("#agent-state").textContent=e.message;}};
+ }
+ navSettings.addEventListener("click",showPanel);
+})();
