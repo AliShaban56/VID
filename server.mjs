@@ -125,7 +125,8 @@ async function kieRequest(pathname, payload) {
       kieInvalidKeys.add(item.id);
       continue;
     }
-    if (code === 402) {
+    const insufficientCredits = code === 402 || /insufficient credits|credits insufficient|not enough credits|insufficient balance/i.test(String(result?.msg || result?.message || ""));
+    if (insufficientCredits) {
       // Credits may differ between API keys/accounts; try the next configured key.
       continue;
     }
