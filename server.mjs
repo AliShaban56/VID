@@ -519,10 +519,11 @@ async function handleApi(req, res, url) {
       try{
         const media=await fetch(body.videoUrl);if(!media.ok)throw new Error("رابط الفيديو غير قابل للتحميل.");
         const buffer=Buffer.from(await media.arrayBuffer());if(buffer.length>150*1024*1024)throw new Error("حجم الفيديو كبير جدًا (الحد الحالي 150 ميجابايت).");
-        const init=await fetch("https://open.tiktokapis.com/v2/post/publish/video/init/",{method:"POST",headers:{authorization:"Bearer "+saved.access_token,"content-type":"application/json"},body:JSON.stringify({post_info:{title,privacy_level:"PUBLIC_TO_EVERYONE",disable_comment:false,disable_duet:false,disable_stitch:false,is_aigc:true},source_info:{source:"FILE_UPLOAD",video_size:buffer.length,chunk_size:buffer.length,total_chunk_count:1}})});
+        const chunkSize=Math.min(64*1024*1024,Math.max(5*1024*1024,10*1024*1024));
+        const totalChunks=Math.ceil(buffer.length/chunkSize);
+        const init=await fetch("https://open.tiktokapis.com/v2/post/publish/video/init/",{method:"POST",headers:{authorization:"Bearer "+saved.access_token,"content-type":"application/json"},body:JSON.stringify({post_info:{title,privacy_level:"PUBLIC_TO_EVERYONE",disable_comment:false,disable_duet:false,disable_stitch:false,is_aigc:true},source_info:{source:"FILE_UPLOAD",video_size:buffer.length,chunk_size:chunkSize,total_chunk_count:totalChunks}})});
         const initData=await init.json();if(!init.ok||!initData.data?.upload_url)throw new Error(initData.error?.message||initData.error?.code||"TikTok رفض بدء النشر.");
-        const upload=await fetch(initData.data.upload_url,{method:"PUT",headers:{"content-type":"video/mp4","content-length":String(buffer.length),"content-range":`bytes 0-${buffer.length-1}/${buffer.length}`},body:buffer});
-        if(!upload.ok)throw new Error("TikTok بدأ المهمة لكن رفع الفيديو فشل ("+upload.status+").");
+        for(let i=0;i<totalChunks;i++){const start=i*chunkSize,end=Math.min(buffer.length,start+chunkSize)-1,part=buffer.subarray(start,end+1);const upload=await fetch(initData.data.upload_url,{method:"PUT",headers:{"content-type":"video/mp4","content-length":String(part.length),"content-range":`bytes ${start}-${end}/${buffer.length}`},body:part});if(!upload.ok)throw new Error("رفع جزء "+(i+1)+" من "+totalChunks+" فشل ("+upload.status+").");}
         return json(res,202,{ok:true,publishId:initData.data.publish_id||"",message:"تم رفع الفيديو إلى TikTok؛ جاري المعالجة."});
       }catch(error){return json(res,502,{error:error.message||"تعذر نشر الفيديو على TikTok."});}
     }
