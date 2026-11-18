@@ -1,5 +1,5 @@
 import { createClient } from "@libsql/client";
-import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 
 const json = (res, status, body, extra = {}) => {
   res.statusCode = status;
@@ -136,7 +136,7 @@ const formBody = async (req) => { let raw=""; for await (const c of req) { raw+=
 const page = (title, body) => `<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font:16px system-ui;background:#f4f7f3;margin:0;display:grid;place-items:center;min-height:100vh;color:#17221d}.card{background:white;padding:28px;border-radius:18px;width:min(420px,calc(100% - 40px));box-shadow:0 12px 40px #0001}input,button{font:inherit;width:100%;box-sizing:border-box;padding:13px;margin-top:12px;border:1px solid #dce5dc;border-radius:9px}button{background:#176b4a;color:white;border:0;font-weight:700;cursor:pointer}.muted{color:#69746c;font-size:14px;line-height:1.8}</style><main class="card"><h2>${title}</h2>${body}</main></html>`;
 async function oauth(req,res,url) {
   const path=url.pathname;
-  if (req.method==="GET" && (path==="/.well-known/oauth-protected-resource" || path==="/api/mcp/.well-known/oauth-protected-resource")) {
+  if (req.method==="GET" && (path==="/.well-known/oauth-protected-resource" || path==="/.well-known/oauth-protected-resource/api/mcp" || path==="/api/mcp/.well-known/oauth-protected-resource")) {
     return json(res,200,{resource:RESOURCE,authorization_servers:[ISSUER],scopes_supported:["hekaya:use"],resource_documentation:BASE});
   }
   if (req.method==="GET" && (path==="/.well-known/oauth-authorization-server" || path==="/api/mcp/.well-known/oauth-authorization-server")) {
