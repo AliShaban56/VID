@@ -39,3 +39,9 @@ DROP TABLE IF EXISTS social_accounts;
 DROP TABLE IF EXISTS social_oauth_states;
 DROP TABLE IF EXISTS social_platform_preferences;
 DROP TABLE IF EXISTS browserbase_contexts;
+
+
+CREATE TABLE IF NOT EXISTS kie_key_rotation (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  next_index INTEGER NOT NULL DEFAULT 0
+);
