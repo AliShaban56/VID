@@ -125,16 +125,17 @@ async function kieRequest(pathname, payload) {
     lastCode = code;
     lastMessage = typeof result?.msg === "string" ? result.msg : "رفضت Kie.ai الطلب.";
     if (code === 429) {
-      kieCooldowns.set(item.id, Date.now() + 10_000);
+      kieCooldowns.set(item.id, Date.now() + 30_000);
       continue;
     }
-    if (code === 401) {
+    if (code === 401 || code === 403) {
       kieInvalidKeys.add(item.id);
       continue;
     }
     const insufficientCredits = code === 402 || /insufficient credits|credits insufficient|not enough credits|insufficient balance/i.test(String(result?.msg || result?.message || ""));
-    if (insufficientCredits) {
-      // Credits may differ between API keys/accounts; try the next configured key.
+    const transientProviderError = code >= 500 && code <= 599;
+    if (insufficientCredits || transientProviderError) {
+      // Fail over on key/account quota and provider transient errors.
       continue;
     }
     throw Object.assign(new Error(lastMessage), { status: code >= 400 && code <= 599 ? code : 502 });
