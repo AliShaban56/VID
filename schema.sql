@@ -39,3 +39,6 @@ CREATE TABLE IF NOT EXISTS social_platform_preferences (
   auto_publish INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, platform TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS social_accounts (platform TEXT PRIMARY KEY, account_id TEXT, account_name TEXT, encrypted_tokens TEXT NOT NULL, scopes TEXT NOT NULL DEFAULT '', connected_at TEXT NOT NULL, updated_at TEXT NOT NULL);
