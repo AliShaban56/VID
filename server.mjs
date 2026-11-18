@@ -25,7 +25,7 @@ let databaseUrl = process.env.TURSO_DATABASE_URL || "";
 let authToken = process.env.TURSO_AUTH_TOKEN || "";
 let usingLocalDb = !databaseUrl || !authToken;
 let configIncomplete = Boolean(databaseUrl) !== Boolean(authToken);
-let db = createClient(usingLocalDb
+let db = usingLocalDb && isVercelDeployment ? null : createClient(usingLocalDb
   ? { url: `file:${path.join(root, "hekaya-local.db")}` }
   : { url: databaseUrl, authToken });
 let kieKeys = [];
