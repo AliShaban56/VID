@@ -486,7 +486,11 @@ export async function handleRequest(req, res) {
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
       return res.end(script);
     }
-    if (req.method === "GET" && url.pathname === "/workflow-ui.js") {\n      const script = await readFile(path.join(root, "workflow-ui.js"));\n      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });\n      return res.end(script);\n    }\n    if (req.method === "GET" && url.pathname === "/kie-ui.js") {
+    if (req.method === "GET" && url.pathname === "/workflow-ui.js") {
+      const script = await readFile(path.join(root, "workflow-ui.js"));
+      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+      return res.end(script);
+    }\n    if (req.method === "GET" && url.pathname === "/kie-ui.js") {
       const script = await readFile(path.join(root, "kie-ui.js"));
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
       return res.end(script);
