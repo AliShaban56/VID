@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "flow:launcher": "node flow-launcher.mjs"
   },
   "engines": {
     "node": ">=20"
@@ -13,4 +14,3 @@
     "@libsql/client": "^0.18.0"
   }
 }
-
