@@ -1,5 +1,5 @@
 import { createClient } from "@libsql/client";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 
 const json = (res, status, body, extra = {}) => {
   res.statusCode = status;
@@ -23,11 +23,24 @@ async function readBody(req) {
   for await (const chunk of req) { raw += chunk; if (raw.length > 100000) throw new Error("Request too large"); }
   return JSON.parse(raw || "{}");
 }
-function authorized(req) {
-  const expected = process.env.HEKAYA_MCP_TOKEN || "";
+async function authorized(req) {
   const supplied = (req.headers.authorization || "").replace(/^Bearer\\s+/i, "");
-  if (expected.length < 32 || supplied.length !== expected.length) return false;
-  return timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+  if (!/^hk_[A-Za-z0-9_-]{40,100}$/.test(supplied)) return false;
+  let db;
+  try {
+    db = await getDb();
+    await db.execute("CREATE TABLE IF NOT EXISTS mcp_tokens (id INTEGER PRIMARY KEY CHECK (id = 1), token_hash TEXT NOT NULL, created_at TEXT NOT NULL)");
+    const result = await db.execute("SELECT token_hash FROM mcp_tokens WHERE id = 1");
+    const expected = String(result.rows[0]?.token_hash || "");
+    const actual = createHash("sha256").update(supplied).digest("hex");
+    const a = Buffer.from(actual);
+    const b = Buffer.from(expected);
+    return a.length === b.length && timingSafeEqual(a, b);
+  } catch {
+    return false;
+  } finally {
+    db?.close();
+  }
 }
 async function getDb() {
   const url = process.env.TURSO_DATABASE_URL || "";
@@ -104,7 +117,7 @@ async function callTool(name, args) {
 }
 export default async function handler(req, res) {
   if (req.method !== "POST") return json(res, 405, { error: "Use POST for the MCP Streamable HTTP endpoint." }, { allow: "POST" });
-  if (!authorized(req)) return json(res, 401, { error: "Unauthorized" }, { "www-authenticate": 'Bearer realm="Hekaya MCP"' });
+  if (!(await authorized(req))) return json(res, 401, { error: "Unauthorized" }, { "www-authenticate": 'Bearer realm="Hekaya MCP"' });
   let body;
   try { body = await readBody(req); } catch { return json(res, 400, { error: "Invalid JSON-RPC request" }); }
   if (body.method === "notifications/initialized" || body.method?.startsWith("notifications/")) return res.end();
