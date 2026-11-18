@@ -1,69 +1,11 @@
 (() => {
-  const input = document.querySelector("#agnesApiKey");
-  const state = document.querySelector("#agnesKeyState");
-  const status = document.querySelector("#agnesKeyStatus");
-  const save = document.querySelector("#saveAgnesKey");
-  const remove = document.querySelector("#removeAgnesKey");
-  if (!input || !state || !status || !save || !remove) {
-    console.warn("Agnes key settings UI elements not found");
-    return;
-  }
-  const setStatus = (message, kind = "") => {
-    status.textContent = message;
-    status.dataset.status = kind;
-  };
-  async function request(method, payload) {
-    const res = await fetch("/api/settings/agnes-key", {
-      method, headers: payload ? {"content-type":"application/json"} : {},
-      body: payload ? JSON.stringify(payload) : undefined,
-      credentials: "same-origin"
-    });
-    const raw = await res.text();
-    let data = {};
-    try { data = raw ? JSON.parse(raw) : {}; } catch {}
-    if (!res.ok) throw new Error(data.error || ("فشل الطلب (" + res.status + ")."));
-    return data;
-  }
-  async function refresh() {
-    setStatus("جارٍ التحقق من حالة المفتاح…");
-    try {
-      const data = await request("GET");
-      state.textContent = data.configured ? "مضاف " + data.masked : "غير مضاف";
-      remove.hidden = !data.configured;
-      setStatus(data.configured ? "يوجد مفتاح محفوظ بالخادم. يمكنك استبداله أو حذفه." : "لم يتم إضافة مفتاح Agnes AI.");
-    } catch (e) {
-      setStatus("تعذر تحميل الحالة: " + e.message, "error");
-    }
-  }
-  save.onclick = async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const key = input.value.trim();
-    if (!key) { setStatus("الصق مفتاح Agnes AI الأول.", "error"); input.focus(); return; }
-    save.disabled = true;
-    setStatus("جاري حفظ المفتاح…");
-    try {
-      const data = await request("POST", {action:"save", apiKey:key});
-      input.value = "";
-      state.textContent = "مضاف " + data.masked;
-      remove.hidden = false;
-      setStatus("تم حفظ المفتاح في قاعدة البيانات.", "success");
-      if (typeof toast === "function") toast("تم حفظ مفتاح Agnes AI");
-    } catch (e) { setStatus("فشل الحفظ: " + e.message, "error"); }
-    finally { save.disabled = false; }
-  };
-  remove.onclick = async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!confirm("حذف مفتاح Agnes AI المحفوظ؟")) return;
-    remove.disabled = true;
-    try {
-      await request("POST", {action:"remove"});
-      state.textContent = "غير مضاف";
-      remove.hidden = true;
-      setStatus("تم حذف المفتاح من قاعدة البيانات.", "success");
-    } catch(e) { setStatus("فشل الحذف: " + e.message, "error"); }
-    finally { remove.disabled = false; }
-  };
+  const keyInput=document.querySelector("#agnesApiKey"), labelInput=document.querySelector("#agnesKeyLabel");
+  const list=document.querySelector("#agnesKeyList"), state=document.querySelector("#agnesKeyState"), status=document.querySelector("#agnesKeyStatus"), add=document.querySelector("#saveAgnesKey");
+  if(!keyInput||!list||!state||!status||!add)return;
+  const setStatus=(m,k="")=>{status.textContent=m;status.dataset.status=k;};
+  async function request(method,payload){const r=await fetch("/api/settings/agnes-keys",{method,headers:payload?{"content-type":"application/json"}:{},body:payload?JSON.stringify(payload):undefined,credentials:"same-origin"});const txt=await r.text();let d={};try{d=txt?JSON.parse(txt):{}}catch{}if(!r.ok)throw Error(d.error||"فشل الطلب ("+r.status+").");return d;}
+  function render(keys=[]){state.textContent=keys.length+" مفتاح";list.replaceChildren();if(!keys.length){list.textContent="لا توجد مفاتيح Agnes مضافة.";return;}keys.forEach(k=>{const row=document.createElement("div");row.className="kie-key-row";row.style.cssText="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px;border:1px solid var(--line);border-radius:9px;margin-top:8px";const info=document.createElement("div");info.textContent=k.label+" · "+k.masked+" · "+({ready:"جاهز",cooldown:"مهلة مؤقتة",invalid:"مرفوض"}[k.status]||k.status);const del=document.createElement("button");del.className="mini-btn";del.textContent="حذف";del.onclick=async()=>{if(!confirm("حذف "+k.label+"؟"))return;del.disabled=true;try{const d=await request("POST",{action:"remove",id:k.id});render(d.keys);setStatus("تم حذف المفتاح.","success");}catch(e){setStatus(e.message,"error");del.disabled=false;}};row.append(info,del);list.append(row);});}
+  async function refresh(){setStatus("جارٍ تحميل مفاتيح Agnes…");try{const d=await request("GET");render(d.keys);setStatus(d.keys.length?"المفاتيح محفوظة بأمان على الخادم. التدوير التلقائي مفعّل.":"أضف مفتاح Agnes AI للبدء.");}catch(e){setStatus("تعذر تحميل الحالة: "+e.message,"error");}}
+  add.onclick=async e=>{e.preventDefault();e.stopPropagation();const key=keyInput.value.trim();if(!key){setStatus("الصق مفتاح Agnes AI أولًا.","error");keyInput.focus();return;}add.disabled=true;setStatus("جارٍ حفظ المفتاح…");try{const d=await request("POST",{action:"add",apiKey:key,label:labelInput?.value.trim()||undefined});keyInput.value="";if(labelInput)labelInput.value="";render(d.keys);setStatus("تم حفظ المفتاح. التدوير التلقائي جاهز.","success");if(typeof toast==="function")toast("تمت إضافة مفتاح Agnes AI");}catch(e){setStatus("فشل الحفظ: "+e.message,"error");}finally{add.disabled=false;}};
   refresh();
 })();
