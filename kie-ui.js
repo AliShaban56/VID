@@ -131,8 +131,18 @@
       imageEl.src = generatedImageUrl;
       imageEl.hidden = false;
       preview.hidden = false;
-      videoButton.disabled = false;
-      mediaStatus.textContent = "الصورة جاهزة. تقدر تحولها لفيديو 8 ثواني.";
+      mediaStatus.textContent = "الصورة جاهزة — بنبدأ تحويلها لفيديو تلقائيًا…";
+      // Automatic image-to-video pipeline: no second button click needed.
+      const storyForVideo = document.querySelector("#story")?.textContent?.trim() || "";
+      const dialogueForVideo = storyForVideo.replace(/\\s+/g, " ").slice(0, 180);
+      const videoPrompt = `حوّل الصورة إلى فيديو عمودي 9:16 مدته 8 ثوانٍ. حافظ على ملامح الشخصيات والمشهد، بحركة كاميرا سينمائية هادئة. أضف تعليقًا صوتيًا عربيًا مصريًا طبيعيًا بهذه الجملة: ${dialogueForVideo}`;
+      const videoTask = await api("/api/kie/videos", { method: "POST", body: JSON.stringify({ prompt: videoPrompt, imageUrl: generatedImageUrl }) });
+      const autoVideoUrl = await waitForTask(videoTask.taskId, "جاري توليد الفيديو تلقائيًا", 180);
+      videoEl.src = autoVideoUrl;
+      videoEl.hidden = false;
+      preview.hidden = false;
+      videoEl.load();
+      mediaStatus.textContent = "اكتمل التوليد التلقائي: الصورة والفيديو جاهزان للمعاينة.";
     } catch (error) {
       mediaStatus.textContent = error.message;
     } finally { imageButton.disabled = false; }
