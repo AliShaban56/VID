@@ -83,7 +83,7 @@ async function kieCreate(db, model, input) {
     const data = await response.json().catch(() => ({}));
     if (response.ok && Number(data.code) === 200 && data.data?.taskId) return { taskId: data.data.taskId, model };
     last = data.msg || last;
-    if (![401, 429].includes(Number(data.code || response.status))) break;
+    if (![401, 402, 429].includes(Number(data.code || response.status))) break;
   }
   throw new Error(last);
 }
