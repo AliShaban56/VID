@@ -13,44 +13,33 @@
   const videoEl = document.querySelector("#kieGeneratedVideo");
   let generatedImageUrl = "";
   let generatedVideoUrl = "";
-  const tiktokConnect = document.createElement("button");
-  tiktokConnect.type = "button"; tiktokConnect.className = "mini-btn"; tiktokConnect.id = "connectTikTok";
-  tiktokConnect.textContent = "ربط تيك توك";
-  const tiktokPublish = document.createElement("button");
-  tiktokPublish.type = "button"; tiktokPublish.className = "mini-btn green"; tiktokPublish.id = "publishTikTok";
-  tiktokPublish.textContent = "نشر الفيديو على تيك توك"; tiktokPublish.hidden = true; tiktokPublish.disabled = true;
-  mediaStatus.after(tiktokConnect, tiktokPublish);
-  async function refreshTikTokStatus() {
-    try {
-      const state = await api("/api/tiktok/status");
-      tiktokConnect.hidden = false; tiktokConnect.disabled = !state.configured;
-      tiktokConnect.textContent = !state.configured ? "TikTok API غير مهيأ" : state.connected ? "تيك توك متصل ✓ " + (state.account || "") : "ربط حساب تيك توك";
-      tiktokPublish.hidden = !state.connected;
-      tiktokPublish.disabled = !state.connected || !generatedVideoUrl;
-      if (!state.configured) mediaStatus.textContent = "النشر المباشر محتاج إعداد تطبيق TikTok Developer في Vercel (Client Key / Secret / Redirect URL).";
-    } catch { tiktokConnect.hidden = true; tiktokPublish.hidden = true; }
-  }
-  tiktokConnect.addEventListener("click", () => { window.location.href = "/api/tiktok/connect"; });
-  tiktokPublish.addEventListener("click", async () => {
+  const metricoolSend = document.createElement("button");
+  metricoolSend.type = "button"; metricoolSend.className = "mini-btn green"; metricoolSend.id = "sendMetricool";
+  metricoolSend.textContent = "إرسال الفيديو إلى Metricool"; metricoolSend.hidden = true; metricoolSend.disabled = true;
+  mediaStatus.after(metricoolSend);
+  metricoolSend.addEventListener("click", async () => {
     if (!generatedVideoUrl) { toast("ولّد الفيديو الأول"); return; }
-    if (!confirm("تأكيد نشر الفيديو على حساب TikTok المتصل؟")) return;
-    tiktokPublish.disabled = true; tiktokPublish.textContent = "جاري رفع الفيديو إلى TikTok…";
+    const token = prompt("Metricool API Token — Account Settings > API:");
+    if (!token) return;
+    const userId = prompt("Metricool userId (من رابط حساب Metricool):");
+    if (!userId) return;
+    const schedule = prompt("موعد النشر بتوقيت القاهرة (YYYY-MM-DDTHH:mm)، يجب أن يكون في المستقبل:");
+    if (!schedule) return;
+    const captionText = document.querySelector(".generated-meta")?.textContent?.replace(/^وصف النشر:\\s*/, "").trim() || "";
+    const caption = captionText || document.querySelector("#story")?.textContent?.trim().slice(0, 1800) || "حكاية جديدة ✨";
+    metricoolSend.disabled = true; metricoolSend.textContent = "جاري الإرسال إلى Metricool…";
     try {
-      const captionText = document.querySelector(".generated-meta")?.textContent?.replace(/^وصف النشر:\s*/, "").trim() || "";
-      const caption = captionText || document.querySelector("#story")?.textContent?.trim().slice(0, 1800) || "حكاية جديدة ✨";
-      const result = await api("/api/tiktok/publish", { videoUrl: generatedVideoUrl, caption: caption.slice(0, 2200) });
-      mediaStatus.textContent = result.message || "تم إرسال الفيديو إلى TikTok.";
-      tiktokPublish.textContent = "تم رفع الفيديو ✓";
-      if (typeof toast === "function") toast("TikTok استلم الفيديو؛ تابع حالة المعالجة.");
+      const result = await api("/api/metricool/schedule", { method: "POST", body: JSON.stringify({ token, userId, videoUrl: generatedVideoUrl, caption, schedule }) });
+      mediaStatus.textContent = result.message || "تم إرسال الفيديو إلى Metricool.";
+      metricoolSend.textContent = "اترسل إلى Metricool ✓";
+      toast("تمت جدولة الفيديو في Metricool");
     } catch (error) {
-      mediaStatus.textContent = "نشر TikTok: " + error.message;
-      tiktokPublish.textContent = "إعادة محاولة النشر";
-      tiktokPublish.disabled = false;
+      mediaStatus.textContent = "Metricool: " + error.message;
+      metricoolSend.textContent = "إعادة الإرسال إلى Metricool";
+      metricoolSend.disabled = false;
     }
   });
-  refreshTikTokStatus();
-
-  const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({
+    const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (c) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
   })[c]);
 
