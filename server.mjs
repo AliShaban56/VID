@@ -518,6 +518,14 @@ export async function handleRequest(req, res) {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     if (url.pathname === "/api/mcp" || url.pathname.startsWith("/api/mcp/")) return await mcpHandler(req, res);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
+    const ffmpegAsset = url.pathname.match(/^\/ffmpeg\/(worker|classes|const|errors)\.js$/);
+    if (req.method === "GET" && ffmpegAsset) {
+      const upstream = await fetch(`https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/${ffmpegAsset[1]}.js`);
+      if (!upstream.ok) return json(res, 502, { error: "تعذر تحميل مكوّن محرك المونتاج." });
+      const script = await upstream.text();
+      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" });
+      return res.end(script);
+    }
     if (req.method === "GET" && url.pathname === "/editor-ui.js") {
       const script = await readFile(path.join(root, "editor-ui.js"));
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
