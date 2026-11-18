@@ -469,6 +469,65 @@ async function handleApi(req, res, url) {
       return json(res, 502, { error: "تعذر الاتصال بـ GitHub. حاول مرة أخرى." });
     }
   }
+  if (url.pathname.startsWith("/api/tiktok/")) {
+    if (!db || usingLocalDb) return json(res, 503, { error: "قاعدة Turso لازم تكون متصلة لتخزين ربط TikTok بشكل آمن." });
+    const clientKey = process.env.TIKTOK_CLIENT_KEY || "";
+    const clientSecret = process.env.TIKTOK_CLIENT_SECRET || "";
+    const redirectUri = process.env.TIKTOK_REDIRECT_URI || "";
+    await db.execute("CREATE TABLE IF NOT EXISTS tiktok_oauth_state (state TEXT PRIMARY KEY, created_at TEXT NOT NULL)");
+    await db.execute("CREATE TABLE IF NOT EXISTS tiktok_tokens (id INTEGER PRIMARY KEY CHECK (id=1), access_token TEXT NOT NULL, refresh_token TEXT NOT NULL, expires_at INTEGER NOT NULL, refresh_expires_at INTEGER NOT NULL, open_id TEXT NOT NULL, display_name TEXT, updated_at TEXT NOT NULL)");
+    if (req.method === "GET" && url.pathname === "/api/tiktok/status") {
+      const token = await db.execute("SELECT open_id, display_name, expires_at, refresh_expires_at FROM tiktok_tokens WHERE id=1");
+      return json(res, 200, { configured: Boolean(clientKey && clientSecret && redirectUri), connected: token.rows.length > 0, account: token.rows[0]?.display_name || "", expiresAt: token.rows[0]?.expires_at || 0, message: !clientKey || !clientSecret || !redirectUri ? "TikTok Developer credentials missing" : "" });
+    }
+    if (req.method === "GET" && url.pathname === "/api/tiktok/connect") {
+      if (!clientKey || !clientSecret || !redirectUri) return json(res, 503, { error: "إعداد تطبيق TikTok ناقص: TIKTOK_CLIENT_KEY وTIKTOK_CLIENT_SECRET وTIKTOK_REDIRECT_URI." });
+      const state = randomBytes(24).toString("hex");
+      await db.execute({ sql: "INSERT INTO tiktok_oauth_state (state, created_at) VALUES (?,?)", args: [state, new Date().toISOString()] });
+      const oauth = new URL("https://www.tiktok.com/v2/auth/authorize/");
+      oauth.searchParams.set("client_key", clientKey); oauth.searchParams.set("scope", "user.info.basic,video.publish"); oauth.searchParams.set("response_type", "code"); oauth.searchParams.set("redirect_uri", redirectUri); oauth.searchParams.set("state", state);
+      res.writeHead(302, { location: oauth.toString(), "cache-control": "no-store" }); return res.end();
+    }
+    if (req.method === "GET" && url.pathname === "/api/tiktok/callback") {
+      const state = url.searchParams.get("state") || ""; const code = url.searchParams.get("code") || "";
+      const saved = await db.execute({ sql: "SELECT created_at FROM tiktok_oauth_state WHERE state=?", args: [state] });
+      await db.execute({ sql: "DELETE FROM tiktok_oauth_state WHERE state=?", args: [state] });
+      if (!state || !saved.rows.length || Date.now()-Date.parse(saved.rows[0].created_at)>10*60*1000) { res.writeHead(302,{location:"/?tiktok=state_error"});return res.end(); }
+      if (url.searchParams.get("error")) { res.writeHead(302,{location:"/?tiktok=denied"});return res.end(); }
+      try {
+        const exchanged=await fetch("https://open.tiktokapis.com/v2/oauth/token/",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_key:clientKey,client_secret:clientSecret,code,grant_type:"authorization_code",redirect_uri:redirectUri})});
+        const data=await exchanged.json();
+        if(!exchanged.ok||!data.access_token)throw new Error(data.error_description||data.error||"OAuth token exchange failed");
+        let profile={};try{const p=await fetch("https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name",{headers:{authorization:"Bearer "+data.access_token}});profile=(await p.json()).data?.user||{};}catch{}
+        await db.execute({sql:"INSERT OR REPLACE INTO tiktok_tokens (id,access_token,refresh_token,expires_at,refresh_expires_at,open_id,display_name,updated_at) VALUES (1,?,?,?,?,?,?,?)",args:[data.access_token,data.refresh_token||"",Date.now()+Number(data.expires_in||86400)*1000,Date.now()+Number(data.refresh_expires_in||31536000)*1000,profile.open_id||data.open_id||"",profile.display_name||"",new Date().toISOString()]});
+        res.writeHead(302,{location:"/?tiktok=connected"});return res.end();
+      }catch(error){res.writeHead(302,{location:"/?tiktok=error"});return res.end();}
+    }
+    if (req.method === "POST" && url.pathname === "/api/tiktok/disconnect") { await db.execute("DELETE FROM tiktok_tokens WHERE id=1"); return json(res,200,{ok:true}); }
+    if (req.method === "POST" && url.pathname === "/api/tiktok/publish") {
+      const body=await readBody(req);
+      if(!validText(body.videoUrl,2000)||!body.videoUrl.startsWith("https://"))return json(res,400,{error:"رابط فيديو HTTPS مطلوب."});
+      const title=typeof body.caption==="string"?body.caption.slice(0,2200):"";
+      let saved=(await db.execute("SELECT * FROM tiktok_tokens WHERE id=1")).rows[0];
+      if(!saved)return json(res,409,{error:"اربط حساب TikTok أولاً من زر الربط."});
+      if(Date.now()>Number(saved.expires_at)-60000){
+        if(Date.now()>Number(saved.refresh_expires_at)||!saved.refresh_token)return json(res,401,{error:"انتهت صلاحية ربط TikTok؛ افصل الحساب وأعد الربط."});
+        const refreshed=await fetch("https://open.tiktokapis.com/v2/oauth/token/",{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:new URLSearchParams({client_key:clientKey,client_secret:clientSecret,grant_type:"refresh_token",refresh_token:saved.refresh_token})});
+        const rd=await refreshed.json();if(!refreshed.ok||!rd.access_token)return json(res,401,{error:"تعذر تجديد صلاحية TikTok. أعد ربط الحساب."});
+        await db.execute({sql:"UPDATE tiktok_tokens SET access_token=?,refresh_token=?,expires_at=?,refresh_expires_at=?,updated_at=? WHERE id=1",args:[rd.access_token,rd.refresh_token||saved.refresh_token,Date.now()+Number(rd.expires_in||86400)*1000,Date.now()+Number(rd.refresh_expires_in||31536000)*1000,new Date().toISOString()]});saved={...saved,access_token:rd.access_token,refresh_token:rd.refresh_token||saved.refresh_token,expires_at:Date.now()+Number(rd.expires_in||86400)*1000};
+      }
+      try{
+        const media=await fetch(body.videoUrl);if(!media.ok)throw new Error("رابط الفيديو غير قابل للتحميل.");
+        const buffer=Buffer.from(await media.arrayBuffer());if(buffer.length>150*1024*1024)throw new Error("حجم الفيديو كبير جدًا (الحد الحالي 150 ميجابايت).");
+        const init=await fetch("https://open.tiktokapis.com/v2/post/publish/video/init/",{method:"POST",headers:{authorization:"Bearer "+saved.access_token,"content-type":"application/json"},body:JSON.stringify({post_info:{title,privacy_level:"PUBLIC_TO_EVERYONE",disable_comment:false,disable_duet:false,disable_stitch:false,is_aigc:true},source_info:{source:"FILE_UPLOAD",video_size:buffer.length,chunk_size:buffer.length,total_chunk_count:1}})});
+        const initData=await init.json();if(!init.ok||!initData.data?.upload_url)throw new Error(initData.error?.message||initData.error?.code||"TikTok رفض بدء النشر.");
+        const upload=await fetch(initData.data.upload_url,{method:"PUT",headers:{"content-type":"video/mp4","content-length":String(buffer.length),"content-range":`bytes 0-${buffer.length-1}/${buffer.length}`},body:buffer});
+        if(!upload.ok)throw new Error("TikTok بدأ المهمة لكن رفع الفيديو فشل ("+upload.status+").");
+        return json(res,202,{ok:true,publishId:initData.data.publish_id||"",message:"تم رفع الفيديو إلى TikTok؛ جاري المعالجة."});
+      }catch(error){return json(res,502,{error:error.message||"تعذر نشر الفيديو على TikTok."});}
+    }
+    return json(res,404,{error:"TikTok API route not found"});
+  }
   if (req.method === "POST" && url.pathname === "/api/kie/images") {
     const body = await readBody(req);
     const aspect = ["9:16", "16:9", "1:1"].includes(body.aspectRatio) ? body.aspectRatio : "9:16";
