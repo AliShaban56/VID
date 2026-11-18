@@ -434,7 +434,7 @@ async function handleApi(req, res, url) {
   }
   if (req.method === "POST" && url.pathname === "/api/settings/kie-keys") {
     if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "قاعدة Turso غير متصلة؛ لا يمكن حفظ مفاتيح Kie.ai." });
-    if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
+    // Kie.ai key loading is intentionally disabled; Agnes AI is the sole generation provider.
     const body = await readBody(req);
     if (body.action === "add") {
       if (!validText(body.apiKey, 1000) || body.apiKey.trim().length < 16) return json(res, 400, { error: "مفتاح Kie.ai غير صالح أو قصير." });
@@ -677,11 +677,6 @@ export async function handleRequest(req, res) {
     }
     if (req.method === "GET" && url.pathname === "/workflow-ui.js") {
       const script = await readFile(path.join(root, "workflow-ui.js"));
-      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
-      return res.end(script);
-    }
-    if (req.method === "GET" && url.pathname === "/kie-ui.js") {
-      const script = await readFile(path.join(root, "kie-ui.js"));
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
       return res.end(script);
     }
