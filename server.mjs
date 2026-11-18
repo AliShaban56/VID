@@ -8,7 +8,7 @@ import mcpHandler from "./api/mcp.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 3000);
-// Agnes AI multi-key rotation (separate from Kie.ai).
+// Agnes AI multi-key rotation.
  let agnesKeys = [];
  const agnesCooldowns = new Map();
  const agnesInvalidKeys = new Set();
@@ -457,7 +457,7 @@ async function handleApi(req, res, url) {
 }
 
 if (!isVercelDeployment || !usingLocalDb) await migrate();
-if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
+
 export async function handleRequest(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
