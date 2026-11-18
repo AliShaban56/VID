@@ -1,0 +1,10 @@
+.env
+node_modules/
+*.db
+*.db-shm
+*.db-wal
+.kie-keys.json
+.vercel/
+.vercel-tools/
+.vercel-cli/
+
