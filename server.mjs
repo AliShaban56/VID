@@ -126,7 +126,8 @@ async function kieRequest(pathname, payload) {
       continue;
     }
     if (code === 402) {
-      throw Object.assign(new Error("رصيد Kie.ai غير كافٍ. الرصيد موحد للحساب، فتبديل المفتاح لن يحل المشكلة."), { status: 402 });
+      // Credits may differ between API keys/accounts; try the next configured key.
+      continue;
     }
     throw Object.assign(new Error(lastMessage), { status: code >= 400 && code <= 599 ? code : 502 });
   }
@@ -314,7 +315,7 @@ async function handleApi(req, res, url) {
   }
   if (req.method === "GET" && url.pathname === "/api/settings/kie-keys") {
     if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
-    return json(res, 200, { keys: publicKieKeys(), rotation: "round-robin-with-429-failover" });
+    return json(res, 200, { keys: publicKieKeys(), rotation: "round-robin-with-401-402-429-failover" });
   }
   if (req.method === "POST" && url.pathname === "/api/settings/kie-keys") {
     if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "قاعدة Turso غير متصلة؛ لا يمكن حفظ مفاتيح Kie.ai." });
