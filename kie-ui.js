@@ -17,10 +17,21 @@
   })[c]);
 
   async function api(path, options = {}) {
-    const response = await fetch(path, {
-      ...options,
-      headers: { ...(options.body ? { "content-type": "application/json" } : {}), ...(options.headers || {}) },
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+    let response;
+    try {
+      response = await fetch(path, {
+        ...options,
+        signal: controller.signal,
+        headers: { ...(options.body ? { "content-type": "application/json" } : {}), ...(options.headers || {}) },
+      });
+    } catch (error) {
+      if (error.name === "AbortError") throw new Error("الحفظ اتأخر أكثر من 20 ثانية؛ تأكد من اتصال قاعدة البيانات وحاول مرة أخرى.");
+      throw new Error("تعذر الاتصال بالخادم. راجع الإنترنت وحاول مرة أخرى.");
+    } finally {
+      clearTimeout(timeout);
+    }
     let data = {};
     try { data = await response.json(); } catch {}
     if (!response.ok) throw new Error(data.error || "حصل خطأ في الاتصال بالخادم.");
@@ -32,15 +43,15 @@
     try {
       const { keys = [] } = await api("/api/settings/kie-keys");
       keyCount.textContent = `${keys.length} مفاتيح`;
-      keyStatus.textContent = keys.length ? "المفاتيح محفوظة على الخادم." : "أضف أول مفتاح للبدء.";
-      keyList.innerHTML = keys.map((key) => {
+      keyStatus.textContent = keys.length ? "المفاتيح المحفوظة تظهر بالأسفل ويمكن حذف أي مفتاح." : "لا توجد مفاتيح محفوظة حتى الآن. أضف مفتاحك الأول.";
+      keyList.innerHTML = keys.length ? keys.map((key) => {
         const state = key.status === "invalid" ? "غير مقبول" : key.status === "cooldown" ? `مهلة ${key.retryIn}ث` : "جاهز";
         const stateClass = key.status === "invalid" ? "invalid" : key.status === "cooldown" ? "cooldown" : "";
         return `<div class="kie-key-row"><strong>${escapeHtml(key.label)}</strong><code>${escapeHtml(key.masked)}</code><span class="key-status ${stateClass}">${state}</span><button class="kie-remove" type="button" data-remove-kie="${escapeHtml(key.id)}">إزالة</button></div>`;
-      }).join("");
+      }).join("") : '<div class="empty" style="display:block">قائمة المفاتيح المحفوظة فاضية.</div>';
     } catch (error) {
       keyStatus.textContent = error.message;
-      keyList.replaceChildren();
+      keyList.innerHTML = '<div class="empty" style="display:block">تعذر تحميل المفاتيح. جرّب تحديث القائمة.</div>';
     }
   }
 
@@ -49,16 +60,25 @@
     const label = document.querySelector("#kieKeyLabel").value.trim();
     if (!apiKey) { keyStatus.textContent = "أدخل مفتاح Kie.ai أولًا."; return; }
     addButton.disabled = true;
-    keyStatus.textContent = "جاري حفظ المفتاح بأمان على الخادم…";
+    const originalText = addButton.textContent;
+    addButton.textContent = "جاري الحفظ…";
+    keyStatus.textContent = "جاري حفظ المفتاح بأمان…";
     try {
-      await api("/api/settings/kie-keys", { method: "POST", body: JSON.stringify({ action: "add", apiKey, label }) });
+      const result = await api("/api/settings/kie-keys", { method: "POST", body: JSON.stringify({ action: "add", apiKey, label }) });
       document.querySelector("#kieApiKey").value = "";
       document.querySelector("#kieKeyLabel").value = "";
-      toast("اتحفظ مفتاح Kie.ai على الخادم");
-      await refreshKeys();
+      keyStatus.textContent = "تم حفظ المفتاح بنجاح، وهذه قائمة المفاتيح المحفوظة.";
+      toast("اتحفظ مفتاح Kie.ai بنجاح");
+      if (result.keys) {
+        keyCount.textContent = `${result.keys.length} مفاتيح`;
+        await refreshKeys();
+      } else await refreshKeys();
     } catch (error) {
       keyStatus.textContent = error.message;
-    } finally { addButton.disabled = false; }
+    } finally {
+      addButton.disabled = false;
+      addButton.textContent = originalText;
+    }
   });
 
   keyList.addEventListener("click", async (event) => {
