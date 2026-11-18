@@ -34,17 +34,3 @@ CREATE TABLE IF NOT EXISTS kie_api_keys (
 
 CREATE INDEX IF NOT EXISTS kie_api_keys_created_at_idx ON kie_api_keys(created_at);
 
-CREATE TABLE IF NOT EXISTS social_platform_preferences (
-  platform TEXT PRIMARY KEY,
-  auto_publish INTEGER NOT NULL DEFAULT 0,
-  updated_at TEXT NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS social_oauth_states (state TEXT PRIMARY KEY, platform TEXT NOT NULL, created_at TEXT NOT NULL, expires_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS social_accounts (platform TEXT PRIMARY KEY, account_id TEXT, account_name TEXT, encrypted_tokens TEXT NOT NULL, scopes TEXT NOT NULL DEFAULT '', connected_at TEXT NOT NULL, updated_at TEXT NOT NULL);
-
-CREATE TABLE IF NOT EXISTS browserbase_contexts (
-  id TEXT PRIMARY KEY,
-  created_at TEXT NOT NULL,
-  updated_at TEXT NOT NULL
-);
