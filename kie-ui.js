@@ -80,7 +80,7 @@
     for (let attempt = 0; attempt < limit; attempt++) {
       mediaStatus.textContent = `${message} · ${Math.min(99, Math.floor((attempt / limit) * 100))}٪`;
       try {
-        const task = await api(`/api/kie/jobs/${encodeURIComponent(taskId)}`);
+        const task = await api(`/api/kie/jobs?taskId=${encodeURIComponent(taskId)}`);
         if (task.state === "success") {
           if (!task.resultUrls?.length) throw new Error("اكتملت المهمة لكن Kie.ai لم يرجع رابط الناتج.");
           return task.resultUrls[0];
