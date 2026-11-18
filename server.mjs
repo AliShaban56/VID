@@ -285,6 +285,7 @@ const validPlatforms = (value) => Array.isArray(value) && value.length <= 4 && v
 
 
 async function handleApi(req, res, url) {
+  if (url.pathname.startsWith("/api/kie/") || url.pathname === "/api/settings/kie-keys" || url.pathname.startsWith("/api/agent/kie/")) return json(res, 410, { error: "Kie.ai integration has been permanently disabled. Hekaya uses Agnes AI only." });
   const isVercel = isVercelDeployment;
   if (isVercel && req.method === "GET" && url.pathname === "/api/auth/status") {
     const configured = Boolean(process.env.APP_ACCESS_PASSWORD && process.env.APP_SESSION_SECRET);
@@ -428,7 +429,7 @@ async function handleApi(req, res, url) {
     if(req.method==="POST"){const body=await readBody(req);if(body.action==="remove"){if(agnesKeys[0])await db.execute({sql:"DELETE FROM agnes_multi_keys WHERE id = ?",args:[agnesKeys[0].id]});await loadAgnesKeys();return json(res,200,{ok:true,configured:agnesKeys.length>0});}if(body.action==="save"&&validText(body.apiKey,2000)&&body.apiKey.trim().length>=16){const secret=body.apiKey.trim();await db.execute({sql:"INSERT OR IGNORE INTO agnes_multi_keys (id,label,secret,created_at) VALUES (?,?,?,?)",args:[randomUUID(),"Agnes key",secret,new Date().toISOString()]});await loadAgnesKeys();return json(res,200,{ok:true,configured:true,masked:"••••"+secret.slice(-4)});}return json(res,400,{error:"مفتاح Agnes AI غير صالح."});}
   }
   if (req.method === "GET" && url.pathname === "/api/settings/kie-keys") {
-    if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
+    
     return json(res, 200, { keys: publicKieKeys(), rotation: "round-robin-with-401-402-429-failover" });
   }
   if (req.method === "POST" && url.pathname === "/api/settings/kie-keys") {
@@ -567,23 +568,14 @@ async function handleApi(req, res, url) {
   }
   if (req.method === "POST" && url.pathname === "/api/agnes/images") {
     const body = await readBody(req);
+    const aspect = ["9:16", "16:9", "1:1"].includes(body.aspectRatio) ? body.aspectRatio : "9:16";
     if (!validText(body.prompt, 4000)) return json(res, 400, { error: "اكتب وصف الصورة أولًا." });
-    if (!db || usingLocalDb) return json(res, 503, { error: "قاعدة البيانات غير متصلة لإحضار مفتاح Agnes." });
     try {
-      const stored = await db.execute("SELECT secret FROM agnes_api_keys WHERE id = 1");
-      const apiKey = stored.rows[0]?.secret;
-      if (!apiKey) return json(res, 409, { error: "احفظ مفتاح Agnes AI من الإعدادات أولًا." });
-      const upstream = await fetch("https://apihub.agnes-ai.com/v1/images/generations", {
-        method: "POST",
-        headers: { authorization: "Bearer " + apiKey, "content-type": "application/json" },
-        body: JSON.stringify({ model: "agnes-image-2.5-flash", prompt: body.prompt.trim(), n: 1, size: "1024x1792", extra_body: { ratio: "9:16", response_format: "url" } })
-      });
-      const data = await upstream.json().catch(() => ({}));
-      if (!upstream.ok) return json(res, upstream.status, { error: data.error?.message || data.message || "Agnes رفضت توليد الصورة." });
+      const { data, keyId } = await agnesRequest("/v1/images/generations", { model: "agnes-image-2.5-flash", prompt: body.prompt.trim(), n: 1, size: aspect === "16:9" ? "1792x1024" : aspect === "1:1" ? "1024x1024" : "1024x1792", extra_body: { ratio: aspect, response_format: "url" } });
       const imageUrl = data.data?.[0]?.url || data.data?.[0]?.image_url || data.image_url || data.url;
       if (!imageUrl || typeof imageUrl !== "string" || !imageUrl.startsWith("https://")) return json(res, 502, { error: "Agnes لم ترجع رابط صورة صالحًا." });
-      return json(res, 200, { imageUrl, model: "agnes-image-2.5-flash" });
-    } catch (error) { return json(res, 502, { error: "تعذر الاتصال بـ Agnes لتوليد الصورة: " + error.message }); }
+      return json(res, 200, { imageUrl, model: "agnes-image-2.5-flash", provider: "Agnes AI", keyId });
+    } catch (error) { return json(res, error.status || 502, { error: "تعذر الاتصال بـ Agnes لتوليد الصورة: " + error.message }); }
   }
   if (req.method === "POST" && url.pathname === "/api/kie/images") {
     const body = await readBody(req);
@@ -602,21 +594,12 @@ async function handleApi(req, res, url) {
   if (req.method === "POST" && url.pathname === "/api/agnes/videos") {
     const body = await readBody(req);
     if (!validText(body.prompt, 4000) || typeof body.imageUrl !== "string" || !body.imageUrl.startsWith("https://")) return json(res, 400, { error: "نحتاج وصف الفيديو ورابط الصورة." });
-    if (!db || usingLocalDb) return json(res, 503, { error: "قاعدة البيانات غير متصلة لإحضار مفتاح Agnes." });
     try {
-      const stored = await db.execute("SELECT secret FROM agnes_api_keys WHERE id = 1");
-      const apiKey = stored.rows[0]?.secret;
-      if (!apiKey) return json(res, 409, { error: "احفظ مفتاح Agnes AI من الإعدادات أولاً." });
-      const upstream = await fetch("https://apihub.agnes-ai.com/v1/videos", {
-        method: "POST", headers: { "authorization": "Bearer " + apiKey, "content-type": "application/json" },
-        body: JSON.stringify({ model: "agnes-video-2.5-flash", prompt: body.prompt.trim(), mode: "keyframe", first_frame: body.imageUrl, seconds: "8", size: "720P", aspect_ratio: "9:16", n: 1 })
-      });
-      const data = await upstream.json().catch(() => ({}));
-      if (!upstream.ok) return json(res, upstream.status, { error: data.error?.message || data.message || "Agnes رفض الطلب (" + upstream.status + ")." });
+      const { data, keyId } = await agnesRequest("/v1/videos", { model: "agnes-video-2.5-flash", prompt: body.prompt.trim(), mode: "keyframe", first_frame: body.imageUrl, seconds: "8", size: "720P", aspect_ratio: "9:16", n: 1 });
       const videoId = data.video_id || data.id || data.task_id || data.data?.video_id || data.data?.id || data.data?.task_id;
       if (!videoId) return json(res, 502, { error: "Agnes لم ترجع رقم مهمة فيديو." });
-      return json(res, 202, { videoId: String(videoId), model: "agnes-video-2.5-flash" });
-    } catch (error) { return json(res, 502, { error: "تعذر الاتصال بـ Agnes: " + error.message }); }
+      return json(res, 202, { videoId: String(videoId), model: "agnes-video-2.5-flash", provider: "Agnes AI", keyId });
+    } catch (error) { return json(res, error.status || 502, { error: "تعذر الاتصال بـ Agnes: " + error.message }); }
   }
   if (req.method === "GET" && url.pathname === "/api/agnes/jobs") {
     const videoId = url.searchParams.get("videoId");
@@ -627,11 +610,14 @@ async function handleApi(req, res, url) {
       const apiKey = stored.rows[0]?.secret;
       if (!apiKey) return json(res, 409, { error: "مفتاح Agnes غير محفوظ." });
       const model = "agnes-video-2.5-flash";
-      const upstream = await fetch("https://apihub.agnes-ai.com/agnesapi?video_id=" + encodeURIComponent(videoId) + "&model_name=" + encodeURIComponent(model), { headers: { "authorization": "Bearer " + apiKey } });
-      const data = await upstream.json().catch(() => ({}));
-      if (!upstream.ok) return json(res, upstream.status, { error: data.error?.message || data.message || "تعذر فحص حالة Agnes." });
-      return json(res, 200, { videoId, status: data.status || data.data?.status || "processing", videoUrl: data.url || data.data?.url || data.video_url || data.data?.video_url || null, progress: data.progress ?? data.data?.progress ?? null, error: data.error || data.data?.error || data.message || "" });
-    } catch (error) { return json(res, 502, { error: "تعذر فحص مهمة Agnes: " + error.message }); }
+      const upstream = await fetch("https://apihub.agnes-ai.com/agnesapi?video_id=  if (req.method === "GET" && url.pathname === "/api/agnes/jobs") {
+    const videoId = url.searchParams.get("videoId");
+    if (!validText(videoId, 200)) return json(res, 400, { error: "رقم المهمة غير صالح." });
+    try {
+      const { data, keyId } = await agnesRequest("/agnesapi?video_id=" + encodeURIComponent(videoId) + "&model_name=agnes-video-2.5-flash", undefined, { retryNetwork: true });
+      const task = data.data || data;
+      return json(res, 200, { videoId, status: task.status || "processing", videoUrl: task.url || task.video_url || task.videoUrl || null, progress: task.progress ?? null, error: task.error || task.message || "", provider: "Agnes AI", keyId });
+    } catch (error) { return json(res, error.status || 502, { error: "تعذر فحص مهمة Agnes: " + error.message }); }
   }
   if (req.method === "POST" && url.pathname === "/api/kie/videos") {
     const body = await readBody(req);
