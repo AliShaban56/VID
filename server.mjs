@@ -519,6 +519,26 @@ async function handleApi(req, res, url) {
       return json(res, 201, { ok: true, message: "تم إرسال الفيديو إلى Metricool وجدولته للنشر على TikTok.", result: data });
     } catch { return json(res, 502, { error: "تعذر الاتصال بـ Metricool." }); }
   }
+  if (req.method === "POST" && url.pathname === "/api/agnes/images") {
+    const body = await readBody(req);
+    if (!validText(body.prompt, 4000)) return json(res, 400, { error: "اكتب وصف الصورة أولًا." });
+    if (!db || usingLocalDb) return json(res, 503, { error: "قاعدة البيانات غير متصلة لإحضار مفتاح Agnes." });
+    try {
+      const stored = await db.execute("SELECT secret FROM agnes_api_keys WHERE id = 1");
+      const apiKey = stored.rows[0]?.secret;
+      if (!apiKey) return json(res, 409, { error: "احفظ مفتاح Agnes AI من الإعدادات أولًا." });
+      const upstream = await fetch("https://apihub.agnes-ai.com/v1/images/generations", {
+        method: "POST",
+        headers: { authorization: "Bearer " + apiKey, "content-type": "application/json" },
+        body: JSON.stringify({ model: "agnes-image-2.5-flash", prompt: body.prompt.trim(), n: 1, size: "1024x1792", extra_body: { ratio: "9:16", response_format: "url" } })
+      });
+      const data = await upstream.json().catch(() => ({}));
+      if (!upstream.ok) return json(res, upstream.status, { error: data.error?.message || data.message || "Agnes رفضت توليد الصورة." });
+      const imageUrl = data.data?.[0]?.url || data.data?.[0]?.image_url || data.image_url || data.url;
+      if (!imageUrl || typeof imageUrl !== "string" || !imageUrl.startsWith("https://")) return json(res, 502, { error: "Agnes لم ترجع رابط صورة صالحًا." });
+      return json(res, 200, { imageUrl, model: "agnes-image-2.5-flash" });
+    } catch (error) { return json(res, 502, { error: "تعذر الاتصال بـ Agnes لتوليد الصورة: " + error.message }); }
+  }
   if (req.method === "POST" && url.pathname === "/api/kie/images") {
     const body = await readBody(req);
     const aspect = ["9:16", "16:9", "1:1"].includes(body.aspectRatio) ? body.aspectRatio : "9:16";
