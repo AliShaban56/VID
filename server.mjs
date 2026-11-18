@@ -85,9 +85,16 @@ function publicKieKeys() {
   }));
 }
 
+async function nextKieKeyIndex(targetDb, count) {
+  await targetDb.execute("CREATE TABLE IF NOT EXISTS kie_key_rotation (id INTEGER PRIMARY KEY CHECK (id = 1), next_index INTEGER NOT NULL DEFAULT 0)");
+  await targetDb.execute("INSERT OR IGNORE INTO kie_key_rotation (id, next_index) VALUES (1, 0)");
+  const result = await targetDb.execute({ sql: "UPDATE kie_key_rotation SET next_index = (next_index + 1) % ? WHERE id = 1 RETURNING (next_index + ? - 1) % ? AS assigned_index", args: [count, count, count] });
+  return Number(result.rows[0]?.assigned_index || 0);
+}
+
 async function kieRequest(pathname, payload) {
   if (!kieKeys.length) throw Object.assign(new Error("أضف مفتاح Kie.ai واحدًا على الأقل من الإعدادات."), { status: 409 });
-  const start = kieKeyCursor % kieKeys.length;
+  const start = await nextKieKeyIndex(db, kieKeys.length);
   const ordered = kieKeys.map((_, index) => kieKeys[(start + index) % kieKeys.length]);
   const usable = ordered.filter((item) => !kieInvalidKeys.has(item.id));
   if (!usable.length) throw Object.assign(new Error("كل المفاتيح رُفضت من Kie.ai؛ راجع المفاتيح المحفوظة."), { status: 401 });
