@@ -321,6 +321,32 @@ async function handleApi(req, res, url) {
       return json(res, 503, { error: "تعذر إدارة مفتاح MCP. تأكد من اتصال قاعدة Turso." });
     }
   }
+  if (url.pathname === "/api/settings/agnes-key") {
+    if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "قاعدة Turso غير متصلة؛ لا يمكن حفظ مفتاح Agnes AI." });
+    try {
+      await db.execute("CREATE TABLE IF NOT EXISTS agnes_api_keys (id INTEGER PRIMARY KEY CHECK (id = 1), secret TEXT NOT NULL, created_at TEXT NOT NULL)");
+      if (req.method === "GET") {
+        const result = await db.execute("SELECT secret, created_at FROM agnes_api_keys WHERE id = 1");
+        const secret = result.rows[0]?.secret || "";
+        return json(res, 200, { configured: Boolean(secret), masked: secret ? "••••" + String(secret).slice(-4) : null, createdAt: result.rows[0]?.created_at || null });
+      }
+      if (req.method === "POST") {
+        const body = await readBody(req);
+        if (body.action === "remove") {
+          await db.execute("DELETE FROM agnes_api_keys WHERE id = 1");
+          return json(res, 200, { ok: true, configured: false });
+        }
+        if (body.action !== "save" || !validText(body.apiKey, 2000) || body.apiKey.trim().length < 16) return json(res, 400, { error: "مفتاح Agnes AI غير صالح أو قصير." });
+        const secret = body.apiKey.trim();
+        await db.execute({ sql: "INSERT INTO agnes_api_keys (id, secret, created_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET secret = excluded.secret, created_at = excluded.created_at", args: [secret, new Date().toISOString()] });
+        return json(res, 200, { ok: true, configured: true, masked: "••••" + secret.slice(-4) });
+      }
+      return json(res, 405, { error: "الطريقة غير مدعومة." });
+    } catch (error) {
+      console.error("Agnes key settings failed:", error.message);
+      return json(res, 503, { error: "تعذر إدارة مفتاح Agnes AI. تأكد من اتصال قاعدة Turso." });
+    }
+  }
   if (req.method === "GET" && url.pathname === "/api/settings/kie-keys") {
     if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
     return json(res, 200, { keys: publicKieKeys(), rotation: "round-robin-with-401-402-429-failover" });
