@@ -65,12 +65,12 @@
         head.innerHTML = "<strong></strong><span>✓ قصة مولّدة بالذكاء الاصطناعي</span>";
         head.querySelector("strong").textContent = current.title;
         const hook = document.createElement("p");
-        hook.className = "story";
+        hook.className = "story generated-hook";
         hook.style.fontWeight = "700";
         hook.textContent = "الافتتاحية: " + current.hook;
         $("#story").before(hook);
         const extras = document.createElement("div");
-        extras.className = "saved-note";
+        extras.className = "saved-note generated-meta";
         extras.textContent = "وصف النشر: " + current.caption + "  " + (current.hashtags || []).join(" ");
         $("#story").after(extras);
         ensureButtons();
