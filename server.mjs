@@ -34,6 +34,15 @@ const kieCooldowns = new Map();
 const kieInvalidKeys = new Set();
 
 async function loadKieKeys() {
+  if (isVercelDeployment && db && !usingLocalDb) {
+    try {
+      const stored = await db.execute("SELECT id, label, secret FROM kie_api_keys ORDER BY created_at ASC");
+      if (stored.rows.length > 0) {
+        kieKeys = stored.rows.map((row) => ({ id: row.id, label: row.label, secret: row.secret }));
+        return;
+      }
+    } catch {}
+  }
   if (isVercelDeployment && process.env.KIE_API_KEYS) {
     try {
       const parsed = JSON.parse(process.env.KIE_API_KEYS);
@@ -50,9 +59,17 @@ async function loadKieKeys() {
   } catch { kieKeys = []; }
 }
 
-await loadKieKeys();
+if (!isVercelDeployment) await loadKieKeys();
 
 async function saveKieKeys() {
+  if (isVercelDeployment && db && !usingLocalDb) {
+    const statements = [{ sql: "DELETE FROM kie_api_keys" }, ...kieKeys.map((item) => ({
+      sql: "INSERT INTO kie_api_keys (id, label, secret, created_at) VALUES (?, ?, ?, ?)",
+      args: [item.id, item.label, item.secret, new Date().toISOString()],
+    }))];
+    await db.batch(statements, "write");
+    return;
+  }
   await writeFile(kieKeysFile, JSON.stringify(kieKeys, null, 2), { encoding: "utf8", mode: 0o600 });
 }
 
@@ -262,7 +279,7 @@ async function handleApi(req, res, url) {
     return json(res, 200, { keys: publicKieKeys(), rotation: "round-robin-with-429-failover" });
   }
   if (req.method === "POST" && url.pathname === "/api/settings/kie-keys") {
-    if (isVercelDeployment) return json(res, 409, { error: "في نسخة Vercel، أضف قائمة المفاتيح في متغير البيئة KIE_API_KEYS ثم أعد النشر." });
+    if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "قاعدة Turso غير متصلة؛ لا يمكن حفظ مفاتيح Kie.ai." });
     const body = await readBody(req);
     if (body.action === "add") {
       if (!validText(body.apiKey, 1000) || body.apiKey.trim().length < 16) return json(res, 400, { error: "مفتاح Kie.ai غير صالح أو قصير." });
@@ -364,6 +381,7 @@ async function handleApi(req, res, url) {
 }
 
 if (!isVercelDeployment || !usingLocalDb) await migrate();
+if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
 export async function handleRequest(req, res) {
   try {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
