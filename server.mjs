@@ -510,6 +510,11 @@ export async function handleRequest(req, res) {
     const url = new URL(req.url, `http://${req.headers.host || "localhost"}`);
     if (url.pathname === "/api/mcp" || url.pathname.startsWith("/api/mcp/")) return await mcpHandler(req, res);
     if (url.pathname.startsWith("/api/")) return await handleApi(req, res, url);
+    if (req.method === "GET" && url.pathname === "/editor-ui.js") {
+      const script = await readFile(path.join(root, "editor-ui.js"));
+      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
+      return res.end(script);
+    }
     if (req.method === "GET" && url.pathname === "/auth-ui.js") {
       const script = await readFile(path.join(root, "auth-ui.js"));
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
