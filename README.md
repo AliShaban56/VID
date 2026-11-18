@@ -32,6 +32,7 @@
 المشروع يحتوي الآن على مدخل serverless في `api/[...path].mjs` وملف إعداد `vercel.json`. من Vercel اربط المستودع، واجعل **Root Directory** هو `outputs` إذا كان المستودع يحتوي مجلد `outputs` في الجذر، ثم أضف متغيرات البيئة التالية قبل النشر:
 
 - `TURSO_DATABASE_URL` و`TURSO_AUTH_TOKEN` لقاعدة Turso.
+- `APP_DEPLOYMENT_TARGET=vercel` لتفعيل سلوك النشر الآمن.
 - `APP_ACCESS_PASSWORD` لكلمة مرور الدخول، و`APP_SESSION_SECRET` لقيمة عشوائية سرية طويلة.
 - `KIE_API_KEYS` بصيغة JSON مثل `[{"label":"Primary","secret":"..."},{"label":"Backup","secret":"..."}]`.
 
