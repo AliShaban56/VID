@@ -8,147 +8,7 @@ import mcpHandler from "./api/mcp.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 3000);
-const kieKeysFile = path.join(root, ".kie-keys.json");
-
-async function loadEnv() {
-  try {
-    const content = await readFile(path.join(root, ".env"), "utf8");
-    for (const line of content.split(/\r?\n/)) {
-      const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
-      if (match && !process.env[match[1]]) process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
-    }
-  } catch {}
-}
-
-await loadEnv();
-const isVercelDeployment = process.env.APP_DEPLOYMENT_TARGET === "vercel" || process.env.VERCEL === "1" || Boolean(process.env.APP_ACCESS_PASSWORD);
-let databaseUrl = process.env.TURSO_DATABASE_URL || "";
-let authToken = process.env.TURSO_AUTH_TOKEN || "";
-let usingLocalDb = !databaseUrl || !authToken;
-let configIncomplete = Boolean(databaseUrl) !== Boolean(authToken);
-let db = usingLocalDb && isVercelDeployment ? null : createClient(usingLocalDb
-  ? { url: `file:${path.join(root, "hekaya-local.db")}` }
-  : { url: databaseUrl, authToken });
-let kieKeys = [];
-let kieKeyCursor = 0;
-const kieCooldowns = new Map();
-const kieInvalidKeys = new Set();
-
-async function loadKieKeys() {
-  if (isVercelDeployment && db && !usingLocalDb) {
-    try {
-      const stored = await db.execute("SELECT id, label, secret FROM kie_api_keys ORDER BY created_at ASC");
-      if (stored.rows.length > 0) {
-        kieKeys = stored.rows.map((row) => ({ id: row.id, label: row.label, secret: row.secret }));
-        return;
-      }
-    } catch {}
-  }
-  if (isVercelDeployment && process.env.KIE_API_KEYS) {
-    try {
-      const parsed = JSON.parse(process.env.KIE_API_KEYS);
-      kieKeys = Array.isArray(parsed) ? parsed.map((item, index) => typeof item === "string"
-        ? { id: `env-${index + 1}`, label: `مفتاح ${index + 1}`, secret: item.trim() }
-        : item).filter((item) => item && typeof item.secret === "string" && item.secret.trim()) : [];
-      return;
-    } catch { kieKeys = []; return; }
-  }
-  if (isVercelDeployment) { kieKeys = []; return; }
-  try {
-    const parsed = JSON.parse(await readFile(kieKeysFile, "utf8"));
-    kieKeys = Array.isArray(parsed) ? parsed.filter((item) => item && typeof item.id === "string" && typeof item.secret === "string") : [];
-  } catch { kieKeys = []; }
-}
-
-// Kie.ai key loading is disabled in every environment.
-
-async function saveKieKeys() {
-  if (isVercelDeployment && db && !usingLocalDb) {
-    const statements = [{ sql: "DELETE FROM kie_api_keys" }, ...kieKeys.map((item) => ({
-      sql: "INSERT INTO kie_api_keys (id, label, secret, created_at) VALUES (?, ?, ?, ?)",
-      args: [item.id, item.label, item.secret, new Date().toISOString()],
-    }))];
-    await db.batch(statements, "write");
-    return;
-  }
-  await writeFile(kieKeysFile, JSON.stringify(kieKeys, null, 2), { encoding: "utf8", mode: 0o600 });
-}
-
-function publicKieKeys() {
-  const now = Date.now();
-  return kieKeys.map((item) => ({
-    id: item.id,
-    label: item.label,
-    masked: `••••${item.secret.slice(-4)}`,
-    status: kieInvalidKeys.has(item.id) ? "invalid" : (kieCooldowns.get(item.id) > now ? "cooldown" : "ready"),
-    retryIn: Math.max(0, Math.ceil(((kieCooldowns.get(item.id) || 0) - now) / 1000)),
-  }));
-}
-
-async function nextKieKeyIndex(targetDb, count) {
-  await targetDb.execute("CREATE TABLE IF NOT EXISTS kie_key_rotation (id INTEGER PRIMARY KEY CHECK (id = 1), next_index INTEGER NOT NULL DEFAULT 0)");
-  await targetDb.execute("INSERT OR IGNORE INTO kie_key_rotation (id, next_index) VALUES (1, 0)");
-  const result = await targetDb.execute({ sql: "UPDATE kie_key_rotation SET next_index = (next_index + 1) % ? WHERE id = 1 RETURNING (next_index + ? - 1) % ? AS assigned_index", args: [count, count, count] });
-  return Number(result.rows[0]?.assigned_index || 0);
-}
-
-async function kieRequest(pathname, payload) {
-  if (!kieKeys.length) throw Object.assign(new Error("أضف مفتاح Kie.ai واحدًا على الأقل من الإعدادات."), { status: 409 });
-  const start = await nextKieKeyIndex(db, kieKeys.length);
-  const ordered = kieKeys.map((_, index) => kieKeys[(start + index) % kieKeys.length]);
-  const usable = ordered.filter((item) => !kieInvalidKeys.has(item.id));
-  if (!usable.length) throw Object.assign(new Error("كل المفاتيح رُفضت من Kie.ai؛ راجع المفاتيح المحفوظة."), { status: 401 });
-  const active = usable.filter((item) => (kieCooldowns.get(item.id) || 0) <= Date.now());
-  if (!active.length) throw Object.assign(new Error("كل المفاتيح في مهلة مؤقتة بسبب حد الاستخدام؛ أعد المحاولة بعد قليل."), { status: 429 });
-  let lastCode = 502;
-  let lastMessage = "تعذر الاتصال بخدمة Kie.ai.";
-  for (const item of active) {
-    let response;
-    let result;
-    try {
-      response = await fetch(`https://api.kie.ai${pathname}`, {
-        method: payload === undefined ? "GET" : "POST",
-        headers: { Authorization: `Bearer ${item.secret}`, "Content-Type": "application/json" },
-        ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
-      });
-      result = await response.json();
-    } catch {
-      throw Object.assign(new Error("تعذر الوصول إلى Kie.ai. لم نكرر الطلب لتجنب إنشاء مهمة مكررة."), { status: 502 });
-    }
-    const code = Number(result?.code ?? response.status);
-    if (response.ok && code === 200) {
-      kieKeyCursor = (kieKeys.findIndex((candidate) => candidate.id === item.id) + 1) % kieKeys.length;
-      kieInvalidKeys.delete(item.id);
-      kieCooldowns.delete(item.id);
-      return { result, keyId: item.id };
-    }
-    lastCode = code;
-    lastMessage = typeof result?.msg === "string" ? result.msg : "رفضت Kie.ai الطلب.";
-    if (code === 429) {
-      kieCooldowns.set(item.id, Date.now() + 30_000);
-      continue;
-    }
-    if (code === 401 || code === 403) {
-      kieInvalidKeys.add(item.id);
-      continue;
-    }
-    const insufficientCredits = code === 402 || /insufficient credits|credits insufficient|not enough credits|insufficient balance/i.test(String(result?.msg || result?.message || ""));
-    const transientProviderError = code >= 500 && code <= 599;
-    if (insufficientCredits || transientProviderError) {
-      // Fail over on key/account quota and provider transient errors.
-      continue;
-    }
-    throw Object.assign(new Error(lastMessage), { status: code >= 400 && code <= 599 ? code : 502 });
-  }
-  const status = lastCode === 429 ? 429 : (lastCode === 401 ? 401 : 502);
-  const message = status === 429
-    ? "المفاتيح المتاحة وصلت حد الاستخدام؛ جُرّبت المفاتيح التالية. أعد المحاولة بعد انتهاء المهلة."
-    : "المفاتيح المتاحة لم تُقبل من Kie.ai. راجعها من الإعدادات.";
-  throw Object.assign(new Error(message), { status });
-}
-
-
- // Agnes AI multi-key rotation (separate from Kie.ai).
+// Agnes AI multi-key rotation (separate from Kie.ai).
  let agnesKeys = [];
  const agnesCooldowns = new Map();
  const agnesInvalidKeys = new Set();
@@ -403,14 +263,6 @@ async function handleApi(req, res, url) {
     const videoId=url.searchParams.get("videoId");if(!validText(videoId,200))return json(res,400,{error:"Invalid task ID."});
     try{const {data}=await agnesRequest("/agnesapi?video_id="+encodeURIComponent(videoId)+"&model_name=agnes-video-2.5-flash",undefined,{retryNetwork:true});return json(res,200,{videoId,status:data.status||data.data?.status||"processing",videoUrl:data.url||data.data?.url||data.video_url||data.data?.video_url||null,progress:data.progress??data.data?.progress??null,error:data.error||data.data?.error||""});}catch(error){return json(res,error.status||502,{error:error.message});}
   }
-  if (agentAuthorized && req.method === "POST" && url.pathname === "/api/agent/kie/videos") {
-    const body = await readBody(req); if (!validText(body.prompt, 4000) || typeof body.imageUrl !== "string" || !body.imageUrl.startsWith("https://")) return json(res, 400, { error: "Prompt and HTTPS imageUrl are required." });
-    try { const { result } = await kieRequest("/api/v1/jobs/createTask", { model: "grok-imagine-video-1-5-preview", input: { prompt: body.prompt.trim(), image_urls: [body.imageUrl], aspect_ratio: "9:16", resolution: "480p", duration: 8 } }); const taskId = result?.data?.taskId; if (!taskId) return json(res, 502, { error: "Kie.ai response missing taskId." }); return json(res, 202, { taskId, model: "grok-imagine-video-1-5-preview" }); } catch (error) { return json(res, error.status || 502, { error: error.message }); }
-  }
-  if (agentAuthorized && req.method === "GET" && url.pathname === "/api/agent/kie/jobs") {
-    const taskId = url.searchParams.get("taskId"); if (!validText(taskId, 200)) return json(res, 400, { error: "Invalid taskId." });
-    try { const { result } = await kieRequest("/api/v1/jobs/recordInfo?taskId=" + encodeURIComponent(taskId)); const data = result?.data || {}; let parsed = {}; try { parsed = typeof data.resultJson === "string" ? JSON.parse(data.resultJson) : (data.resultJson || {}); } catch {} return json(res, 200, { taskId, state: data.state || "unknown", progress: data.progress ?? null, resultUrls: parsed.resultUrls || [], failMsg: data.failMsg || "" }); } catch (error) { return json(res, error.status || 502, { error: error.message }); }
-  }
   if (url.pathname === "/api/settings/agnes-keys") {
     if(isVercelDeployment&&(!db||usingLocalDb))return json(res,503,{error:"قاعدة Turso غير متصلة؛ لا يمكن حفظ مفاتيح Agnes AI."});
     try{await loadAgnesKeys();
@@ -427,36 +279,6 @@ async function handleApi(req, res, url) {
   if (url.pathname === "/api/settings/agnes-key") {
     if(req.method==="GET"){await loadAgnesKeys();return json(res,200,{configured:agnesKeys.length>0,masked:agnesKeys[0]?.masked||null,createdAt:null});}
     if(req.method==="POST"){const body=await readBody(req);if(body.action==="remove"){if(agnesKeys[0])await db.execute({sql:"DELETE FROM agnes_multi_keys WHERE id = ?",args:[agnesKeys[0].id]});await loadAgnesKeys();return json(res,200,{ok:true,configured:agnesKeys.length>0});}if(body.action==="save"&&validText(body.apiKey,2000)&&body.apiKey.trim().length>=16){const secret=body.apiKey.trim();await db.execute({sql:"INSERT OR IGNORE INTO agnes_multi_keys (id,label,secret,created_at) VALUES (?,?,?,?)",args:[randomUUID(),"Agnes key",secret,new Date().toISOString()]});await loadAgnesKeys();return json(res,200,{ok:true,configured:true,masked:"••••"+secret.slice(-4)});}return json(res,400,{error:"مفتاح Agnes AI غير صالح."});}
-  }
-  if (req.method === "GET" && url.pathname === "/api/settings/kie-keys") {
-    
-    return json(res, 200, { keys: publicKieKeys(), rotation: "round-robin-with-401-402-429-failover" });
-  }
-  if (req.method === "POST" && url.pathname === "/api/settings/kie-keys") {
-    if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "قاعدة Turso غير متصلة؛ لا يمكن حفظ مفاتيح Kie.ai." });
-    // Kie.ai key loading is intentionally disabled; Agnes AI is the sole generation provider.
-    const body = await readBody(req);
-    if (body.action === "add") {
-      if (!validText(body.apiKey, 1000) || body.apiKey.trim().length < 16) return json(res, 400, { error: "مفتاح Kie.ai غير صالح أو قصير." });
-      const secret = body.apiKey.trim();
-      if (kieKeys.some((item) => item.secret === secret)) return json(res, 409, { error: "المفتاح مضاف بالفعل." });
-      const item = { id: randomUUID(), label: validText(body.label, 80) ? body.label.trim() : `مفتاح ${kieKeys.length + 1}`, secret };
-      kieKeys.push(item);
-      try { await saveKieKeys(); }
-      catch { kieKeys = kieKeys.filter((key) => key.id !== item.id); return json(res, 500, { error: "تعذر حفظ مفتاح Kie.ai في قاعدة البيانات." }); }
-      return json(res, 201, { keys: publicKieKeys() });
-    }
-    if (body.action === "remove" && typeof body.id === "string") {
-      const old = kieKeys;
-      kieKeys = kieKeys.filter((item) => item.id !== body.id);
-      if (kieKeys.length === old.length) return json(res, 404, { error: "المفتاح غير موجود." });
-      kieInvalidKeys.delete(body.id);
-      kieCooldowns.delete(body.id);
-      try { await saveKieKeys(); }
-      catch { kieKeys = old; return json(res, 500, { error: "تعذر تحديث قائمة مفاتيح Kie.ai." }); }
-      return json(res, 200, { keys: publicKieKeys() });
-    }
-    return json(res, 400, { error: "الإجراء غير معروف." });
   }
   if (req.method === "POST" && url.pathname === "/api/ai/generate-story") {
     if (!process.env.HEKAYA_OPENAI_API_KEY) return json(res, 503, { error: "أضف HEKAYA_OPENAI_API_KEY في إعدادات Vercel لتفعيل كتابة القصص بالذكاء الاصطناعي." });
@@ -576,20 +398,6 @@ async function handleApi(req, res, url) {
       if (!imageUrl || typeof imageUrl !== "string" || !imageUrl.startsWith("https://")) return json(res, 502, { error: "Agnes لم ترجع رابط صورة صالحًا." });
       return json(res, 200, { imageUrl, model: "agnes-image-2.5-flash", provider: "Agnes AI", keyId });
     } catch (error) { return json(res, error.status || 502, { error: "تعذر الاتصال بـ Agnes لتوليد الصورة: " + error.message }); }
-  }
-  if (req.method === "POST" && url.pathname === "/api/kie/images") {
-    const body = await readBody(req);
-    const aspect = ["9:16", "16:9", "1:1"].includes(body.aspectRatio) ? body.aspectRatio : "9:16";
-    if (!validText(body.prompt, 4000)) return json(res, 400, { error: "اكتب وصفًا للصورة أولًا." });
-    try {
-      const { result } = await kieRequest("/api/v1/jobs/createTask", {
-        model: "gpt-image-2-6/flare-text-to-image",
-        input: { prompt: body.prompt.trim(), aspect_ratio: aspect, resolution: "1K", quality: "medium", background: "auto", output_format: "png" },
-      });
-      const taskId = result?.data?.taskId;
-      if (!taskId) return json(res, 502, { error: "لم ترجع Kie.ai رقم المهمة." });
-      return json(res, 202, { taskId, model: "gpt-image-2-6/flare-text-to-image" });
-    } catch (error) { return json(res, error.status || 502, { error: error.message }); }
   }
   if (req.method === "POST" && url.pathname === "/api/agnes/videos") {
     const body = await readBody(req);
