@@ -166,7 +166,7 @@
       const videoPrompt = `حوّل الصورة إلى فيديو عمودي 9:16 مدته 8 ثوانٍ. حافظ على ملامح الشخصيات والمشهد، بحركة كاميرا سينمائية هادئة. أضف تعليقًا صوتيًا عربيًا مصريًا طبيعيًا بهذه الجملة: ${dialogueForVideo}`;
       const videoTask = await api("/api/kie/videos", { method: "POST", body: JSON.stringify({ prompt: videoPrompt, imageUrl: generatedImageUrl }) });
       const autoVideoUrl = await waitForTask(videoTask.taskId, "جاري توليد الفيديو تلقائيًا", 180);
-      generatedVideoUrl = autoVideoUrl;\n      videoEl.src = autoVideoUrl;\n      tiktokPublish.disabled = !generatedVideoUrl;\n      refreshTikTokStatus();
+      generatedVideoUrl = autoVideoUrl;\n      videoEl.src = autoVideoUrl;\n      metricoolSend.hidden = false; metricoolSend.disabled = !generatedVideoUrl;
       videoEl.hidden = false;
       preview.hidden = false;
       videoEl.load();
@@ -186,7 +186,7 @@
       const prompt = `حوّل الصورة إلى فيديو عمودي 9:16 مدته 8 ثوانٍ. حافظ على ملامح الشخصيات والمشهد، بحركة كاميرا سينمائية هادئة. أضف تعليقًا صوتيًا عربيًا مصريًا طبيعيًا بهذه الجملة: ${dialogue}`;
       const created = await api("/api/kie/videos", { method: "POST", body: JSON.stringify({ prompt, imageUrl: generatedImageUrl }) });
       const videoUrl = await waitForTask(created.taskId, "جاري تجهيز الفيديو", 180);
-      generatedVideoUrl = videoUrl;\n      videoEl.src = videoUrl;\n      tiktokPublish.disabled = !generatedVideoUrl;\n      refreshTikTokStatus();
+      generatedVideoUrl = videoUrl;\n      videoEl.src = videoUrl;\n      metricoolSend.hidden = false; metricoolSend.disabled = !generatedVideoUrl;
       videoEl.hidden = false;
       preview.hidden = false;
       mediaStatus.textContent = "الفيديو جاهز للمعاينة.";
@@ -230,7 +230,7 @@
           await delay(4000);
         }
         if (!finalUrl) throw new Error("التوليد طول أكثر من الوقت المتوقع. جرّب فحص المهمة لاحقًا.");
-        generatedVideoUrl = finalUrl;\n        videoEl.src = finalUrl;\n        tiktokPublish.disabled = !generatedVideoUrl;\n        refreshTikTokStatus();
+        generatedVideoUrl = finalUrl;\n        videoEl.src = finalUrl;\n        metricoolSend.hidden = false; metricoolSend.disabled = !generatedVideoUrl;
         videoEl.hidden = false;
         preview.hidden = false;
         videoEl.load();
