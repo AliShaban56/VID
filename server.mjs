@@ -366,7 +366,7 @@ async function handleApi(req, res, url) {
     const body = await readBody(req);
     if (!validText(body.title, 180) || !validText(body.story, 30000)) return json(res, 400, { error: "العنوان أو نص القصة غير صالح." });
     const id = randomUUID();
-    const slug = body.title.trim().toLowerCase().replace(/[^\\p{L}\\p{N}]+/gu, "-").replace(/^-|-$/g, "").slice(0, 60) || "hekaya-story";
+    const slug = body.title.trim().toLowerCase().replace(/[^a-z0-9\u0600-\u06FF]+/gi, "-").replace(/^-|-$/g, "").slice(0, 60) || "hekaya-story";
     const filePath = `content-inbox/${new Date().toISOString().slice(0,10)}-${slug}-${id.slice(0,8)}.json`;
     const document = {
       id, title: body.title.trim(), topic: typeof body.topic === "string" ? body.topic.slice(0,1200) : "",
