@@ -52,7 +52,7 @@
     ffmpeg=new FFmpeg();
     ffmpeg.on("progress",({progress:p})=>setStatus("جاري تجهيز الفيديو النهائي…",Math.min(95,12+p*82)));
     ffmpeg.on("log",({message})=>{if(/error/i.test(message))console.warn("FFmpeg:",message);});
-    const base="https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm";
+    const base="https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd";
     await ffmpeg.load({coreURL:await toBlobURL(base+"/ffmpeg-core.js","text/javascript"),wasmURL:await toBlobURL(base+"/ffmpeg-core.wasm","application/wasm")});
     return ffmpeg;
   }
