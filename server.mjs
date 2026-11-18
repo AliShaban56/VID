@@ -60,7 +60,7 @@ async function loadKieKeys() {
   } catch { kieKeys = []; }
 }
 
-if (!isVercelDeployment) await loadKieKeys();
+// Kie.ai key loading is disabled in every environment.
 
 async function saveKieKeys() {
   if (isVercelDeployment && db && !usingLocalDb) {
