@@ -39,7 +39,7 @@ async function ensureOAuth(db) {
   ], "write");
 }
 async function authorized(req) {
-  const supplied = (req.headers.authorization || "").replace(/^Bearer\\s+/i, "");
+  const supplied = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
   if (!supplied) return false;
   let db;
   try {
@@ -145,7 +145,7 @@ async function oauth(req,res,url) {
   if (path==="/api/mcp/register" && req.method==="POST") {
     const body=await readBody(req);
     const redirects=Array.isArray(body.redirect_uris)?body.redirect_uris:[];
-    if(!redirects.length || redirects.length>10 || redirects.some(v=>typeof v!=="string" || !(v.startsWith("https://") || /^http:\/\/(localhost|127\\.0\\.0\\.1)(:\\d+)?\\//.test(v)))) return json(res,400,{error:"invalid_redirect_uri"});
+    if(!redirects.length || redirects.length>10 || redirects.some(v=>typeof v!=="string" || !(v.startsWith("https://") || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(v)))) return json(res,400,{error:"invalid_redirect_uri"});
     const db=await getDb();
     try {
       await ensureOAuth(db);
