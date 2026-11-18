@@ -145,7 +145,14 @@ async function oauth(req,res,url) {
   if (path==="/api/mcp/register" && req.method==="POST") {
     const body=await readBody(req);
     const redirects=Array.isArray(body.redirect_uris)?body.redirect_uris:[];
-    if(!redirects.length || redirects.length>10 || redirects.some(v=>typeof v!=="string" || !(v.startsWith("https://") || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(v)))) return json(res,400,{error:"invalid_redirect_uri"});
+    const validRedirects = redirects.length > 0 && redirects.length <= 10 && redirects.every((value) => {
+      if (typeof value !== "string") return false;
+      try {
+        const target = new URL(value);
+        return target.protocol === "https:" || (target.protocol === "http:" && ["localhost", "127.0.0.1"].includes(target.hostname));
+      } catch { return false; }
+    });
+    if (!validRedirects) return json(res,400,{error:"invalid_redirect_uri"});
     const db=await getDb();
     try {
       await ensureOAuth(db);
