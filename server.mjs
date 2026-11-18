@@ -271,7 +271,7 @@ async function handleApi(req, res, url) {
       const item = { id: randomUUID(), label: validText(body.label, 80) ? body.label.trim() : `مفتاح ${kieKeys.length + 1}`, secret };
       kieKeys.push(item);
       try { await saveKieKeys(); }
-      catch { kieKeys = kieKeys.filter((key) => key.id !== item.id); return json(res, 500, { error: "تعذر حفظ المفتاح محليًا." }); }
+      catch { kieKeys = kieKeys.filter((key) => key.id !== item.id); return json(res, 500, { error: "تعذر حفظ مفتاح Kie.ai في قاعدة البيانات." }); }
       return json(res, 201, { keys: publicKieKeys() });
     }
     if (body.action === "remove" && typeof body.id === "string") {
@@ -281,7 +281,7 @@ async function handleApi(req, res, url) {
       kieInvalidKeys.delete(body.id);
       kieCooldowns.delete(body.id);
       try { await saveKieKeys(); }
-      catch { kieKeys = old; return json(res, 500, { error: "تعذر تحديث قائمة المفاتيح." }); }
+      catch { kieKeys = old; return json(res, 500, { error: "تعذر تحديث قائمة مفاتيح Kie.ai." }); }
       return json(res, 200, { keys: publicKieKeys() });
     }
     return json(res, 400, { error: "الإجراء غير معروف." });
