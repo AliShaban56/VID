@@ -147,6 +147,53 @@ async function kieRequest(pathname, payload) {
   throw Object.assign(new Error(message), { status });
 }
 
+
+ // Agnes AI multi-key rotation (separate from Kie.ai).
+ let agnesKeys = [];
+ const agnesCooldowns = new Map();
+ const agnesInvalidKeys = new Set();
+ async function loadAgnesKeys() {
+   await db.execute("CREATE TABLE IF NOT EXISTS agnes_multi_keys (id TEXT PRIMARY KEY, label TEXT NOT NULL, secret TEXT NOT NULL, created_at TEXT NOT NULL)");
+   const legacy = (await db.execute("SELECT secret, created_at FROM agnes_api_keys WHERE id = 1")).rows[0];
+   const current = (await db.execute("SELECT id, label, secret FROM agnes_multi_keys ORDER BY created_at ASC")).rows;
+   if (legacy?.secret && !current.some(row => row.secret === legacy.secret)) {
+     await db.execute({sql:"INSERT INTO agnes_multi_keys (id,label,secret,created_at) VALUES (?,?,?,?)",args:["legacy-agnes-key","مفتاح Agnes السابق",legacy.secret,legacy.created_at || new Date().toISOString()]});
+   }
+   const rows = (await db.execute("SELECT id,label,secret FROM agnes_multi_keys ORDER BY created_at ASC")).rows;
+   agnesKeys = rows.map(row=>({id:String(row.id),label:String(row.label||"Agnes key"),secret:String(row.secret)}));
+ }
+ function publicAgnesKeys() {
+   const now=Date.now();
+   return agnesKeys.map(k=>({id:k.id,label:k.label,masked:"••••"+k.secret.slice(-4),status:agnesInvalidKeys.has(k.id)?"invalid":(agnesCooldowns.get(k.id)>now?"cooldown":"ready"),retryIn:Math.max(0,Math.ceil(((agnesCooldowns.get(k.id)||0)-now)/1000))}));
+ }
+ async function agnesRequest(pathname, payload, {retryNetwork=false}={}) {
+   if (!db || usingLocalDb) throw Object.assign(new Error("Turso unavailable for Agnes key retrieval."),{status:503});
+   await loadAgnesKeys();
+   if(!agnesKeys.length) throw Object.assign(new Error("أضف مفتاح Agnes AI واحدًا على الأقل من الإعدادات."),{status:409});
+   const start=await nextKieKeyIndex(db,agnesKeys.length);
+   const order=agnesKeys.map((_,i)=>agnesKeys[(start+i)%agnesKeys.length]);
+   const available=order.filter(k=>!agnesInvalidKeys.has(k.id)&&((agnesCooldowns.get(k.id)||0)<=Date.now()));
+   if(!available.length) throw Object.assign(new Error("كل مفاتيح Agnes في مهلة مؤقتة أو غير صالحة. أعد المحاولة لاحقًا."),{status:429});
+   let lastStatus=502,lastMsg="Agnes AI request failed.";
+   for(const key of available){
+     let response,data;
+     try{
+       response=await fetch("https://apihub.agnes-ai.com"+pathname,{method:payload===undefined?"GET":"POST",headers:{authorization:"Bearer "+key.secret,"content-type":"application/json"},...(payload===undefined?{}:{body:JSON.stringify(payload)})});
+       data=await response.json().catch(()=>({}));
+     }catch{
+       if(!retryNetwork) throw Object.assign(new Error("Agnes connection error; request was not retried to avoid duplicate video jobs."),{status:502});
+       lastStatus=502;continue;
+     }
+     if(response.ok){agnesInvalidKeys.delete(key.id);agnesCooldowns.delete(key.id);return {data,keyId:key.id};}
+     lastStatus=response.status;lastMsg=data.error?.message||data.message||data.error||"Agnes request failed.";
+     if(response.status===429){agnesCooldowns.set(key.id,Date.now()+45000);continue;}
+     if(response.status===401||response.status===403){agnesInvalidKeys.add(key.id);continue;}
+     if(response.status===402||response.status>=500)continue;
+     throw Object.assign(new Error(String(lastMsg)),{status:response.status});
+   }
+   throw Object.assign(new Error(lastStatus===429?"Agnes keys reached rate limits; temporary cooldown applied.":lastMsg),{status:lastStatus===429?429:502});
+ }
+
 async function migrate(target = db) {
   const schema = await readFile(path.join(root, "schema.sql"), "utf8");
   for (const statement of schema.split(";").map((sql) => sql.trim()).filter(Boolean)) {
@@ -341,12 +388,12 @@ async function handleApi(req, res, url) {
   }
   if (agentAuthorized && req.method === "GET" && url.pathname === "/api/agent/status") return json(res, 200, { ok: true, service: "Hekaya Studio Agent Control", version: 1, capabilities: ["episode-draft-storage", "episode-listing", "agnes-video-generation", "agnes-job-status", "kie-video-generation", "kie-job-status"], timezone: "Africa/Cairo" });
   if (agentAuthorized && req.method === "POST" && url.pathname === "/api/agent/agnes/videos") {
-    const body = await readBody(req); if (!validText(body.prompt, 4000) || typeof body.imageUrl !== "string" || !body.imageUrl.startsWith("https://")) return json(res, 400, { error: "Prompt and HTTPS imageUrl are required." }); if (!db || usingLocalDb) return json(res, 503, { error: "Turso unavailable for Agnes key retrieval." });
-    try { const stored = await db.execute("SELECT secret FROM agnes_api_keys WHERE id = 1"); const apiKey = stored.rows[0]?.secret; if (!apiKey) return json(res, 409, { error: "Agnes key not configured." }); const upstream = await fetch("https://apihub.agnes-ai.com/v1/videos", { method: "POST", headers: { authorization: "Bearer " + apiKey, "content-type": "application/json" }, body: JSON.stringify({ model: "agnes-video-2.5-flash", prompt: body.prompt.trim(), mode: "keyframe", first_frame: body.imageUrl, seconds: "8", size: "720P", aspect_ratio: "9:16", n: 1 }) }); const data = await upstream.json().catch(() => ({})); if (!upstream.ok) return json(res, upstream.status, { error: data.error?.message || data.message || "Agnes request failed." }); const videoId = data.video_id || data.id || data.task_id || data.data?.video_id || data.data?.id || data.data?.task_id; if (!videoId) return json(res, 502, { error: "Agnes response missing task ID." }); return json(res, 202, { videoId: String(videoId), model: "agnes-video-2.5-flash" }); } catch { return json(res, 502, { error: "Agnes connection error." }); }
+    const body=await readBody(req); if(!validText(body.prompt,4000)||typeof body.imageUrl!=="string"||!body.imageUrl.startsWith("https://"))return json(res,400,{error:"Prompt and HTTPS imageUrl are required."});
+    try{const {data}=await agnesRequest("/v1/videos",{model:"agnes-video-2.5-flash",prompt:body.prompt.trim(),mode:"keyframe",first_frame:body.imageUrl,seconds:"8",size:"720P",aspect_ratio:"9:16",n:1});const videoId=data.video_id||data.id||data.task_id||data.data?.video_id||data.data?.id||data.data?.task_id;if(!videoId)return json(res,502,{error:"Agnes response missing task ID."});return json(res,202,{videoId:String(videoId),model:"agnes-video-2.5-flash"});}catch(error){return json(res,error.status||502,{error:error.message});}
   }
   if (agentAuthorized && req.method === "GET" && url.pathname === "/api/agent/agnes/jobs") {
-    const videoId = url.searchParams.get("videoId"); if (!validText(videoId, 200) || !db || usingLocalDb) return json(res, 400, { error: "Invalid task ID or database unavailable." });
-    try { const stored = await db.execute("SELECT secret FROM agnes_api_keys WHERE id = 1"); const apiKey = stored.rows[0]?.secret; if (!apiKey) return json(res, 409, { error: "Agnes key not configured." }); const upstream = await fetch("https://apihub.agnes-ai.com/agnesapi?video_id=" + encodeURIComponent(videoId) + "&model_name=agnes-video-2.5-flash", { headers: { authorization: "Bearer " + apiKey } }); const data = await upstream.json().catch(() => ({})); if (!upstream.ok) return json(res, upstream.status, { error: data.message || "Agnes status failed." }); return json(res, 200, { videoId, status: data.status || data.data?.status || "processing", videoUrl: data.url || data.data?.url || data.video_url || data.data?.video_url || null, progress: data.progress ?? data.data?.progress ?? null, error: data.error || data.data?.error || "" }); } catch { return json(res, 502, { error: "Agnes status connection error." }); }
+    const videoId=url.searchParams.get("videoId");if(!validText(videoId,200))return json(res,400,{error:"Invalid task ID."});
+    try{const {data}=await agnesRequest("/agnesapi?video_id="+encodeURIComponent(videoId)+"&model_name=agnes-video-2.5-flash",undefined,{retryNetwork:true});return json(res,200,{videoId,status:data.status||data.data?.status||"processing",videoUrl:data.url||data.data?.url||data.video_url||data.data?.video_url||null,progress:data.progress??data.data?.progress??null,error:data.error||data.data?.error||""});}catch(error){return json(res,error.status||502,{error:error.message});}
   }
   if (agentAuthorized && req.method === "POST" && url.pathname === "/api/agent/kie/videos") {
     const body = await readBody(req); if (!validText(body.prompt, 4000) || typeof body.imageUrl !== "string" || !body.imageUrl.startsWith("https://")) return json(res, 400, { error: "Prompt and HTTPS imageUrl are required." });
@@ -356,31 +403,22 @@ async function handleApi(req, res, url) {
     const taskId = url.searchParams.get("taskId"); if (!validText(taskId, 200)) return json(res, 400, { error: "Invalid taskId." });
     try { const { result } = await kieRequest("/api/v1/jobs/recordInfo?taskId=" + encodeURIComponent(taskId)); const data = result?.data || {}; let parsed = {}; try { parsed = typeof data.resultJson === "string" ? JSON.parse(data.resultJson) : (data.resultJson || {}); } catch {} return json(res, 200, { taskId, state: data.state || "unknown", progress: data.progress ?? null, resultUrls: parsed.resultUrls || [], failMsg: data.failMsg || "" }); } catch (error) { return json(res, error.status || 502, { error: error.message }); }
   }
+  if (url.pathname === "/api/settings/agnes-keys") {
+    if(isVercelDeployment&&(!db||usingLocalDb))return json(res,503,{error:"قاعدة Turso غير متصلة؛ لا يمكن حفظ مفاتيح Agnes AI."});
+    try{await loadAgnesKeys();
+      if(req.method==="GET")return json(res,200,{keys:publicAgnesKeys(),rotation:"round-robin-failover-401-402-429-5xx"});
+      if(req.method==="POST"){const body=await readBody(req);
+        if(body.action==="add"){if(!validText(body.apiKey,2000)||body.apiKey.trim().length<16)return json(res,400,{error:"مفتاح Agnes AI غير صالح أو قصير."});const secret=body.apiKey.trim();if(agnesKeys.some(k=>k.secret===secret))return json(res,409,{error:"المفتاح مضاف بالفعل."});const item={id:randomUUID(),label:validText(body.label,80)?body.label.trim():("Agnes key "+(agnesKeys.length+1)),secret};await db.execute({sql:"INSERT INTO agnes_multi_keys (id,label,secret,created_at) VALUES (?,?,?,?)",args:[item.id,item.label,item.secret,new Date().toISOString()]});await loadAgnesKeys();return json(res,201,{keys:publicAgnesKeys()});}
+        if(body.action==="remove"&&typeof body.id==="string"){const found=agnesKeys.some(k=>k.id===body.id);if(!found)return json(res,404,{error:"المفتاح غير موجود."});await db.execute({sql:"DELETE FROM agnes_multi_keys WHERE id = ?",args:[body.id]});agnesInvalidKeys.delete(body.id);agnesCooldowns.delete(body.id);await loadAgnesKeys();return json(res,200,{keys:publicAgnesKeys()});}
+        return json(res,400,{error:"الإجراء غير معروف."});
+      }
+      return json(res,405,{error:"الطريقة غير مدعومة."});
+    }catch(error){console.error("Agnes key settings failed:",error.message);return json(res,503,{error:"تعذر إدارة مفاتيح Agnes AI. تأكد من اتصال Turso."});}
+  }
+  // Legacy single-key settings route retained for compatibility with old clients.
   if (url.pathname === "/api/settings/agnes-key") {
-    if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "قاعدة Turso غير متصلة؛ لا يمكن حفظ مفتاح Agnes AI." });
-    try {
-      await db.execute("CREATE TABLE IF NOT EXISTS agnes_api_keys (id INTEGER PRIMARY KEY CHECK (id = 1), secret TEXT NOT NULL, created_at TEXT NOT NULL)");
-      if (req.method === "GET") {
-        const result = await db.execute("SELECT secret, created_at FROM agnes_api_keys WHERE id = 1");
-        const secret = result.rows[0]?.secret || "";
-        return json(res, 200, { configured: Boolean(secret), masked: secret ? "••••" + String(secret).slice(-4) : null, createdAt: result.rows[0]?.created_at || null });
-      }
-      if (req.method === "POST") {
-        const body = await readBody(req);
-        if (body.action === "remove") {
-          await db.execute("DELETE FROM agnes_api_keys WHERE id = 1");
-          return json(res, 200, { ok: true, configured: false });
-        }
-        if (body.action !== "save" || !validText(body.apiKey, 2000) || body.apiKey.trim().length < 16) return json(res, 400, { error: "مفتاح Agnes AI غير صالح أو قصير." });
-        const secret = body.apiKey.trim();
-        await db.execute({ sql: "INSERT INTO agnes_api_keys (id, secret, created_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET secret = excluded.secret, created_at = excluded.created_at", args: [secret, new Date().toISOString()] });
-        return json(res, 200, { ok: true, configured: true, masked: "••••" + secret.slice(-4) });
-      }
-      return json(res, 405, { error: "الطريقة غير مدعومة." });
-    } catch (error) {
-      console.error("Agnes key settings failed:", error.message);
-      return json(res, 503, { error: "تعذر إدارة مفتاح Agnes AI. تأكد من اتصال قاعدة Turso." });
-    }
+    if(req.method==="GET"){await loadAgnesKeys();return json(res,200,{configured:agnesKeys.length>0,masked:agnesKeys[0]?.masked||null,createdAt:null});}
+    if(req.method==="POST"){const body=await readBody(req);if(body.action==="remove"){if(agnesKeys[0])await db.execute({sql:"DELETE FROM agnes_multi_keys WHERE id = ?",args:[agnesKeys[0].id]});await loadAgnesKeys();return json(res,200,{ok:true,configured:agnesKeys.length>0});}if(body.action==="save"&&validText(body.apiKey,2000)&&body.apiKey.trim().length>=16){const secret=body.apiKey.trim();await db.execute({sql:"INSERT OR IGNORE INTO agnes_multi_keys (id,label,secret,created_at) VALUES (?,?,?,?)",args:[randomUUID(),"Agnes key",secret,new Date().toISOString()]});await loadAgnesKeys();return json(res,200,{ok:true,configured:true,masked:"••••"+secret.slice(-4)});}return json(res,400,{error:"مفتاح Agnes AI غير صالح."});}
   }
   if (req.method === "GET" && url.pathname === "/api/settings/kie-keys") {
     if (isVercelDeployment && db && !usingLocalDb) await loadKieKeys();
