@@ -237,6 +237,14 @@ async function handleApi(req, res, url) {
     res.setHeader("set-cookie", `hekaya_session=${encodeURIComponent(`${expires}.${signature}`)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`);
     return json(res, 200, { ok: true });
   }
+    const ffmpegAsset = url.pathname.match(/^\/ffmpeg\/(worker|const|errors)\.js$/);
+    if (req.method === "GET" && ffmpegAsset) {
+      const upstream = await fetch(`https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/${ffmpegAsset[1]}.js`);
+      if (!upstream.ok) return json(res, 502, { error: "تعذر تحميل مكوّن محرك المونتاج." });
+      const script = await upstream.text();
+      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" });
+      return res.end(script);
+    }
   if (isVercel && url.pathname !== "/api/health" && !validSession(req)) {
     return json(res, process.env.APP_ACCESS_PASSWORD && process.env.APP_SESSION_SECRET ? 401 : 503, { error: "سجّل دخولك أو اضبط حماية التطبيق في إعدادات Vercel." });
   }
@@ -513,14 +521,6 @@ export async function handleRequest(req, res) {
     if (req.method === "GET" && url.pathname === "/editor-ui.js") {
       const script = await readFile(path.join(root, "editor-ui.js"));
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" });
-      return res.end(script);
-    }
-    const ffmpegAsset = url.pathname.match(/^\/ffmpeg\/(worker|const|errors)\.js$/);
-    if (req.method === "GET" && ffmpegAsset) {
-      const upstream = await fetch(`https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/${ffmpegAsset[1]}.js`);
-      if (!upstream.ok) return json(res, 502, { error: "تعذر تحميل مكوّن محرك المونتاج." });
-      const script = await upstream.text();
-      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" });
       return res.end(script);
     }
     if (req.method === "GET" && url.pathname === "/auth-ui.js") {
