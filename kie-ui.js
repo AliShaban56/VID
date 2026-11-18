@@ -24,7 +24,7 @@
     try {
       const state = await api("/api/tiktok/status");
       tiktokConnect.hidden = false; tiktokConnect.disabled = !state.configured;
-      tiktokConnect.textContent = state.connected ? "تيك توك متصل ✓ " + (state.account || "") : "ربط حساب تيك توك";
+      tiktokConnect.textContent = !state.configured ? "TikTok API غير مهيأ" : state.connected ? "تيك توك متصل ✓ " + (state.account || "") : "ربط حساب تيك توك";
       tiktokPublish.hidden = !state.connected;
       tiktokPublish.disabled = !state.connected || !generatedVideoUrl;
       if (!state.configured) mediaStatus.textContent = "النشر المباشر محتاج إعداد تطبيق TikTok Developer في Vercel (Client Key / Secret / Redirect URL).";
