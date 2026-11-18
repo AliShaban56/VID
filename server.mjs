@@ -237,7 +237,7 @@ async function handleApi(req, res, url) {
     res.setHeader("set-cookie", `hekaya_session=${encodeURIComponent(`${expires}.${signature}`)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`);
     return json(res, 200, { ok: true });
   }
-    const ffmpegAsset = url.pathname.match(/^\/ffmpeg\/(worker|const|errors)\.js$/);
+    const ffmpegAsset = url.pathname.match(/^\/ffmpeg\/(worker|classes|const|errors)\.js$/);
     if (req.method === "GET" && ffmpegAsset) {
       const upstream = await fetch(`https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/esm/${ffmpegAsset[1]}.js`);
       if (!upstream.ok) return json(res, 502, { error: "تعذر تحميل مكوّن محرك المونتاج." });
