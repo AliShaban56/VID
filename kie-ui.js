@@ -146,34 +146,52 @@
     if (!story) { toast("ولّد الحكاية الأول"); return; }
     imageButton.disabled = true;
     videoButton.disabled = true;
-    mediaStatus.textContent = "بنرسل مشهد الصورة إلى Kie.ai…";
+    if (agnesVideoButton) agnesVideoButton.disabled = true;
+    mediaStatus.textContent = "بنولّد الصورة عبر Agnes AI…";
     preview.hidden = true;
     imageEl.hidden = true;
     videoEl.hidden = true;
     generatedImageUrl = "";
+    generatedVideoUrl = "";
     try {
-      const prompt = `أنشئ صورة سينمائية عمودية مناسبة لريلز 9:16 مستوحاة من هذه الحكاية. مشهد بصري واقعي، إضاءة درامية، تعبيرات طبيعية، من دون أي كتابة أو شعارات. الحكاية: ${story.slice(0, 3000)}`;
-      const created = await api("/api/kie/images", { method: "POST", body: JSON.stringify({ prompt, aspectRatio: "9:16" }) });
-      generatedImageUrl = await waitForTask(created.taskId, "جاري توليد الصورة");
+      const prompt = `أنشئ صورة سينمائية عمودية 9:16 مناسبة لريلز مستوحاة من هذه الحكاية. واقعية سينمائية، إضاءة درامية، تعبيرات طبيعية، تكوين واضح، من دون كتابة أو شعارات. الحكاية: ${story.slice(0, 3000)}`;
+      const imageResult = await api("/api/agnes/images", { method: "POST", body: JSON.stringify({ prompt, aspectRatio: "9:16" }) });
+      generatedImageUrl = imageResult.imageUrl;
       imageEl.src = generatedImageUrl;
       imageEl.hidden = false;
-      if (agnesVideoButton && !agnesVideoButton.hidden) agnesVideoButton.disabled = false;
       preview.hidden = false;
-      mediaStatus.textContent = "الصورة جاهزة — بنبدأ تحويلها لفيديو تلقائيًا…";
-      // Automatic image-to-video pipeline: no second button click needed.
-      const storyForVideo = document.querySelector("#story")?.textContent?.trim() || "";
-      const dialogueForVideo = storyForVideo.replace(/\\s+/g, " ").slice(0, 180);
-      const videoPrompt = `حوّل الصورة إلى فيديو عمودي 9:16 مدته 8 ثوانٍ. حافظ على ملامح الشخصيات والمشهد، بحركة كاميرا سينمائية هادئة. أضف تعليقًا صوتيًا عربيًا مصريًا طبيعيًا بهذه الجملة: ${dialogueForVideo}`;
-      const videoTask = await api("/api/kie/videos", { method: "POST", body: JSON.stringify({ prompt: videoPrompt, imageUrl: generatedImageUrl }) });
-      const autoVideoUrl = await waitForTask(videoTask.taskId, "جاري توليد الفيديو تلقائيًا", 180);
-      generatedVideoUrl = autoVideoUrl;\n      videoEl.src = autoVideoUrl;\n      metricoolSend.hidden = false; metricoolSend.disabled = !generatedVideoUrl;
+      mediaStatus.textContent = "الصورة جاهزة من Agnes — بنبدأ توليد الفيديو تلقائيًا…";
+      const dialogue = story.replace(/\\s+/g, " ").slice(0, 180);
+      const videoPrompt = `Animate this image into a cinematic vertical 9:16 video, 8 seconds. Preserve characters, faces, clothing, and art direction. Add subtle natural movement and smooth camera motion. Egyptian Arabic narration: ${dialogue}`;
+      const videoTask = await api("/api/agnes/videos", { method: "POST", body: JSON.stringify({ prompt: videoPrompt, imageUrl: generatedImageUrl }) });
+      let finalUrl = "";
+      for (let attempt = 0; attempt < 150; attempt++) {
+        mediaStatus.textContent = "Agnes بتولّد الفيديو… محاولة " + (attempt + 1) + " من 150";
+        const job = await api("/api/agnes/jobs?videoId=" + encodeURIComponent(videoTask.videoId));
+        const state = String(job.status || "").toLowerCase();
+        if (["completed", "complete", "success", "succeeded", "finished"].includes(state)) {
+          finalUrl = job.videoUrl || "";
+          if (!finalUrl) throw new Error("المهمة اكتملت لكن Agnes لم ترجع رابط الفيديو.");
+          break;
+        }
+        if (["failed", "fail", "error"].includes(state)) throw new Error(job.error || "Agnes فشلت في توليد الفيديو.");
+        await delay(4000);
+      }
+      if (!finalUrl) throw new Error("التوليد طول أكثر من الوقت المتوقع. جرّب فحص المهمة لاحقًا.");
+      generatedVideoUrl = finalUrl;
+      videoEl.src = finalUrl;
+      metricoolSend.hidden = false; metricoolSend.disabled = false;
       videoEl.hidden = false;
       preview.hidden = false;
       videoEl.load();
-      mediaStatus.textContent = "اكتمل التوليد التلقائي: الصورة والفيديو جاهزان للمعاينة.";
+      mediaStatus.textContent = "اكتمل إنتاج الصورة والفيديو عبر Agnes AI — جاهزين للمعاينة.";
     } catch (error) {
-      mediaStatus.textContent = error.message;
-    } finally { imageButton.disabled = false; }
+      mediaStatus.textContent = "Agnes AI: " + error.message;
+    } finally {
+      imageButton.disabled = false;
+      videoButton.disabled = false;
+      if (agnesVideoButton) agnesVideoButton.disabled = !generatedImageUrl;
+    }
   });
 
   videoButton.addEventListener("click", async () => {
