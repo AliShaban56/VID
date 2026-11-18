@@ -645,6 +645,7 @@ export async function handleRequest(req, res) {
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" });
       return res.end(script);
     }
+    if (req.method === "GET" && url.pathname === "/agent.html") { const page = await readFile(path.join(root, "agent.html")); res.writeHead(200, { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff", "referrer-policy": "strict-origin-when-cross-origin" }); return res.end(page); }
     if (req.method === "GET" && url.pathname === "/agent-control-ui.js") { const script = await readFile(path.join(root, "agent-control-ui.js")); res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store", "x-content-type-options": "nosniff" }); return res.end(script); }
     if (req.method === "GET" && url.pathname === "/editor-ui.js") {
       const script = await readFile(path.join(root, "editor-ui.js"));
