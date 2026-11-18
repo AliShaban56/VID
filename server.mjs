@@ -256,6 +256,13 @@ async function handleApi(req, res, url) {
   if (isVercel && url.pathname !== "/api/health" && !validSession(req)) {
     return json(res, process.env.APP_ACCESS_PASSWORD && process.env.APP_SESSION_SECRET ? 401 : 503, { error: "سجّل دخولك أو اضبط حماية التطبيق في إعدادات Vercel." });
   }
+  if(req.method==="GET"&&url.pathname==="/api/browser/status"){return json(res,200,{configured:Boolean(process.env.BROWSERBASE_API_KEY),contextReady:!!(await db.execute("SELECT id FROM browserbase_contexts LIMIT 1")).rows.length});}
+  if(req.method==="POST"&&url.pathname==="/api/browser/session"){
+    const key=process.env.BROWSERBASE_API_KEY;if(!key)return json(res,503,{error:"مفتاح Browserbase غير مضبوط في إعدادات Vercel."});
+    let contextId="",contextReused=false;try{const existing=await db.execute("SELECT id FROM browserbase_contexts ORDER BY created_at DESC LIMIT 1");if(existing.rows[0]){contextId=existing.rows[0].id;contextReused=true;}else{const cr=await fetch("https://api.browserbase.com/v1/contexts",{method:"POST",headers:{"X-BB-API-Key":key,"Content-Type":"application/json"},body:JSON.stringify({})});const cj=await cr.json();if(!cr.ok||!cj.id)throw Error(cj.message||cj.error||"تعذر إنشاء سياق Browserbase");contextId=cj.id;const now=new Date().toISOString();await db.execute({sql:"INSERT INTO browserbase_contexts(id,created_at,updated_at) VALUES(?,?,?)",args:[contextId,now,now]});}}
+    catch(e){return json(res,502,{error:"تعذر إنشاء/استعادة سياق Browserbase: "+e.message});}
+    try{const payload={browserContext:{id:contextId,persist:true},keepAlive:true,browserSettings:{verified:true},proxies:true};if(process.env.BROWSERBASE_PROJECT_ID)payload.projectId=process.env.BROWSERBASE_PROJECT_ID;const sr=await fetch("https://api.browserbase.com/v1/sessions",{method:"POST",headers:{"X-BB-API-Key":key,"Content-Type":"application/json"},body:JSON.stringify(payload)}),sj=await sr.json();if(!sr.ok||!sj.id)throw Error(sj.message||sj.error||"فشل إنشاء الجلسة");return json(res,201,{sessionId:sj.id,contextReused,liveViewUrl:sj.liveViewUrl||sj.live_view_url||"",sessionUrl:"https://browserbase.com/sessions/"+sj.id,expiresAt:sj.expiresAt||null});}catch(e){return json(res,502,{error:"تعذر بدء جلسة Browserbase: "+e.message});}
+  }
   if (req.method === "GET" && url.pathname === "/api/health") {
     if (isVercel && usingLocalDb) return json(res, 503, { ok: false, connected: false, database: "unconfigured", configIncomplete: true });
     try {
