@@ -45,3 +45,9 @@ CREATE TABLE IF NOT EXISTS kie_key_rotation (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   next_index INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS agnes_api_keys (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  secret TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
