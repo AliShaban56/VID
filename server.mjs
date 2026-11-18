@@ -8,6 +8,26 @@ import mcpHandler from "./api/mcp.mjs";
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const port = Number(process.env.PORT || 3000);
+
+async function loadEnv() {
+  try {
+    const content = await readFile(path.join(root, ".env"), "utf8");
+    for (const line of content.split(/\r?\n/)) {
+      const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/);
+      if (match && !process.env[match[1]]) process.env[match[1]] = match[2].replace(/^['"]|['"]$/g, "");
+    }
+  } catch {}
+}
+
+await loadEnv();
+const isVercelDeployment = process.env.APP_DEPLOYMENT_TARGET === "vercel" || process.env.VERCEL === "1" || Boolean(process.env.APP_ACCESS_PASSWORD);
+let databaseUrl = process.env.TURSO_DATABASE_URL || "";
+let authToken = process.env.TURSO_AUTH_TOKEN || "";
+let usingLocalDb = !databaseUrl || !authToken;
+let configIncomplete = Boolean(databaseUrl) !== Boolean(authToken);
+let db = usingLocalDb && isVercelDeployment ? null : createClient(usingLocalDb
+  ? { url: `file:${path.join(root, "hekaya-local.db")}` }
+  : { url: databaseUrl, authToken });
 // Agnes AI multi-key rotation.
  let agnesKeys = [];
  const agnesCooldowns = new Map();
