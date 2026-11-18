@@ -24,3 +24,12 @@ CREATE TABLE IF NOT EXISTS scheduled_posts (
 
 CREATE INDEX IF NOT EXISTS scheduled_posts_scheduled_at_idx ON scheduled_posts(scheduled_at);
 
+
+CREATE TABLE IF NOT EXISTS kie_api_keys (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  secret TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS kie_api_keys_created_at_idx ON kie_api_keys(created_at);
