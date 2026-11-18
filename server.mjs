@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
-import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { createHmac, createHash, randomBytes, randomUUID, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createClient } from "@libsql/client";
@@ -274,6 +274,33 @@ async function handleApi(req, res, url) {
       return json(res, 200, { ok: true, database: "local" });
     } catch {
       return json(res, 500, { error: "تعذر فصل قاعدة البيانات." });
+    }
+  }
+  if (url.pathname === "/api/settings/mcp-token") {
+    if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "قاعدة Turso غير متصلة؛ لا يمكن إدارة مفتاح MCP." });
+    try {
+      await db.execute("CREATE TABLE IF NOT EXISTS mcp_tokens (id INTEGER PRIMARY KEY CHECK (id = 1), token_hash TEXT NOT NULL, created_at TEXT NOT NULL)");
+      if (req.method === "GET") {
+        const result = await db.execute("SELECT created_at FROM mcp_tokens WHERE id = 1");
+        return json(res, 200, { configured: result.rows.length > 0, createdAt: result.rows[0]?.created_at || null, endpoint: "https://vid-ali-b36b.vercel.app/api/mcp" });
+      }
+      if (req.method === "POST") {
+        const body = await readBody(req);
+        if (body.action === "revoke") {
+          await db.execute("DELETE FROM mcp_tokens WHERE id = 1");
+          return json(res, 200, { ok: true, configured: false });
+        }
+        if (body.action !== "generate") return json(res, 400, { error: "إجراء غير صالح." });
+        const token = "hk_" + randomBytes(36).toString("base64url");
+        const tokenHash = createHash("sha256").update(token).digest("hex");
+        const createdAt = new Date().toISOString();
+        await db.execute({ sql: "INSERT INTO mcp_tokens (id, token_hash, created_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET token_hash = excluded.token_hash, created_at = excluded.created_at", args: [tokenHash, createdAt] });
+        return json(res, 200, { ok: true, token, createdAt, endpoint: "https://vid-ali-b36b.vercel.app/api/mcp" });
+      }
+      return json(res, 405, { error: "الطريقة غير مدعومة." }, { allow: "GET, POST" });
+    } catch (error) {
+      console.error("MCP token settings failed:", error.message);
+      return json(res, 503, { error: "تعذر إدارة مفتاح MCP. تأكد من اتصال قاعدة Turso." });
     }
   }
   if (req.method === "GET" && url.pathname === "/api/settings/kie-keys") {
