@@ -53,3 +53,5 @@ CREATE TABLE IF NOT EXISTS agnes_api_keys (
 );
 
 CREATE TABLE IF NOT EXISTS agent_control_tokens (id INTEGER PRIMARY KEY CHECK (id = 1), token_hash TEXT NOT NULL, created_at TEXT NOT NULL);
+
+CREATE TABLE IF NOT EXISTS agent_episodes (slug TEXT PRIMARY KEY, title TEXT NOT NULL, script TEXT NOT NULL, caption TEXT NOT NULL, hashtags TEXT NOT NULL, scenes TEXT NOT NULL, thumbnail_prompt TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft', video_url TEXT, github_url TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
