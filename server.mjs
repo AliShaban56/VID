@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import { readFile, writeFile } from "node:fs/promises";
-import { createHmac, randomUUID, timingSafeEqual, createCipheriv, createDecipheriv } from "node:crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 import { createClient } from "@libsql/client";
@@ -219,25 +219,8 @@ const validText = (value, max) => typeof value === "string" && value.trim().leng
 const validPlatforms = (value) => Array.isArray(value) && value.length <= 4 && value.every((p) => typeof p === "string" && p.length <= 40);
 
 
-const socialProviders = {
- tiktok:{clientId:process.env.TIKTOK_CLIENT_KEY,clientSecret:process.env.TIKTOK_CLIENT_SECRET,authorize:"https://www.tiktok.com/v2/auth/authorize/",token:"https://open.tiktokapis.com/v2/oauth/token/",scopes:"user.info.basic,video.publish",label:"TikTok"},
- youtube:{clientId:process.env.YOUTUBE_CLIENT_ID,clientSecret:process.env.YOUTUBE_CLIENT_SECRET,authorize:"https://accounts.google.com/o/oauth2/v2/auth",token:"https://oauth2.googleapis.com/token",scopes:"openid email https://www.googleapis.com/auth/youtube.upload https://www.googleapis.com/auth/youtube.readonly",label:"YouTube"},
- facebook:{clientId:process.env.FACEBOOK_APP_ID,clientSecret:process.env.FACEBOOK_APP_SECRET,authorize:"https://www.facebook.com/v20.0/dialog/oauth",token:"https://graph.facebook.com/v20.0/oauth/access_token",scopes:"public_profile,pages_show_list,pages_read_engagement,pages_manage_posts",label:"Facebook"}
-};
-function socialBaseUrl(req){return(process.env.APP_BASE_URL||(process.env.VERCEL_URL?"https://"+process.env.VERCEL_URL:"http://"+(req.headers.host||"localhost:3000"))).replace(/\/$/,"")}
-function socialRedirectUri(req,p){return socialBaseUrl(req)+"/api/social/oauth/callback/"+p}
-function socialKey(){const k=process.env.SOCIAL_TOKEN_ENCRYPTION_KEY||"";if(!/^[a-fA-F0-9]{64}$/.test(k))throw new Error("SOCIAL_TOKEN_ENCRYPTION_KEY must be 64 hex characters");return Buffer.from(k,"hex")}
-function encryptSocialTokens(tokens){const iv=Buffer.from(randomUUID().replace(/-/g,"").slice(0,24),"hex"),cipher=createCipheriv("aes-256-gcm",socialKey(),iv),enc=Buffer.concat([cipher.update(JSON.stringify(tokens),"utf8"),cipher.final()]);return iv.toString("hex")+"."+cipher.getAuthTag().toString("hex")+"."+enc.toString("base64")}
-function socialConfigured(p){return Boolean(p.clientId&&p.clientSecret)}
-async function socialAccountInfo(platform,token){try{if(platform==="youtube"){const r=await fetch("https://www.googleapis.com/youtube/v3/channels?part=snippet&mine=true",{headers:{Authorization:"Bearer "+token}}),j=await r.json(),c=j.items?.[0];return c?{id:c.id,name:c.snippet?.title||"YouTube"}:{id:"",name:"YouTube"}}
-if(platform==="tiktok"){const r=await fetch("https://open.tiktokapis.com/v2/user/info/?fields=open_id,display_name,avatar_url",{headers:{Authorization:"Bearer "+token}}),j=await r.json(),u=j.data?.user;return u?{id:u.open_id,name:u.display_name||"TikTok"}:{id:"",name:"TikTok"}}
-if(platform==="facebook"){const r=await fetch("https://graph.facebook.com/v20.0/me?fields=id,name",{headers:{Authorization:"Bearer "+token}}),j=await r.json();return j.id?{id:j.id,name:j.name||"Facebook"}:{id:"",name:"Facebook"}}}catch{}return{id:"",name:platform}}
-
 async function handleApi(req, res, url) {
   const isVercel = isVercelDeployment;
-  const oauthCallback=url.pathname.match(/^\/api\/social\/oauth\/callback\/(tiktok|youtube|facebook)$/);
-  if(req.method==="GET"&&oauthCallback){const platform=oauthCallback[1],code=url.searchParams.get("code"),state=url.searchParams.get("state");if(url.searchParams.has("error")||!code||!state)return res.writeHead(302,{Location:socialBaseUrl(req)+"/?social=error"}).end();try{const rows=await db.execute({sql:"SELECT platform,expires_at FROM social_oauth_states WHERE state=?",args:[state]});const saved=rows.rows[0];await db.execute({sql:"DELETE FROM social_oauth_states WHERE state=?",args:[state]});if(!saved||saved.platform!==platform||Date.parse(saved.expires_at)<Date.now())throw Error("Invalid state");const cfg=socialProviders[platform];if(!socialConfigured(cfg))throw Error("Credentials missing");const form=new URLSearchParams({client_secret:cfg.clientSecret,code,grant_type:"authorization_code",redirect_uri:socialRedirectUri(req,platform)});if(platform==="tiktok")form.set("client_key",cfg.clientId);else form.set("client_id",cfg.clientId);const tr=await fetch(cfg.token,{method:"POST",headers:{"content-type":"application/x-www-form-urlencoded"},body:form}),tokens=await tr.json();const access=tokens.access_token||tokens.accessToken;if(!tr.ok||!access)throw Error("Token exchange failed");const info=await socialAccountInfo(platform,access),now=new Date().toISOString();await db.execute({sql:"INSERT INTO social_accounts(platform,account_id,account_name,encrypted_tokens,scopes,connected_at,updated_at) VALUES(?,?,?,?,?,?,?) ON CONFLICT(platform) DO UPDATE SET account_id=excluded.account_id,account_name=excluded.account_name,encrypted_tokens=excluded.encrypted_tokens,scopes=excluded.scopes,connected_at=excluded.connected_at,updated_at=excluded.updated_at",args:[platform,info.id,info.name,encryptSocialTokens(tokens),tokens.scope||tokens.scopes||"",now,now]});return res.writeHead(302,{Location:socialBaseUrl(req)+"/?social=connected&platform="+platform}).end()}catch(err){console.error("OAuth callback",platform,err.message);return res.writeHead(302,{Location:socialBaseUrl(req)+"/?social=error&platform="+platform}).end()}}
-
   if (isVercel && req.method === "GET" && url.pathname === "/api/auth/status") {
     const configured = Boolean(process.env.APP_ACCESS_PASSWORD && process.env.APP_SESSION_SECRET);
     return json(res, 200, { required: true, configured, authorized: configured && validSession(req) });
@@ -255,13 +238,6 @@ async function handleApi(req, res, url) {
   }
   if (isVercel && url.pathname !== "/api/health" && !validSession(req)) {
     return json(res, process.env.APP_ACCESS_PASSWORD && process.env.APP_SESSION_SECRET ? 401 : 503, { error: "سجّل دخولك أو اضبط حماية التطبيق في إعدادات Vercel." });
-  }
-  if(req.method==="GET"&&url.pathname==="/api/browser/status"){return json(res,200,{configured:Boolean(process.env.BROWSERBASE_API_KEY),contextReady:!!(await db.execute("SELECT id FROM browserbase_contexts LIMIT 1")).rows.length});}
-  if(req.method==="POST"&&url.pathname==="/api/browser/session"){
-    const key=process.env.BROWSERBASE_API_KEY;if(!key)return json(res,503,{error:"مفتاح Browserbase غير مضبوط في إعدادات Vercel."});
-    let contextId="",contextReused=false;try{const existing=await db.execute("SELECT id FROM browserbase_contexts ORDER BY created_at DESC LIMIT 1");if(existing.rows[0]){contextId=existing.rows[0].id;contextReused=true;}else{const cr=await fetch("https://api.browserbase.com/v1/contexts",{method:"POST",headers:{"X-BB-API-Key":key,"Content-Type":"application/json"},body:JSON.stringify({})});const cj=await cr.json();if(!cr.ok||!cj.id)throw Error(cj.message||cj.error||"تعذر إنشاء سياق Browserbase");contextId=cj.id;const now=new Date().toISOString();await db.execute({sql:"INSERT INTO browserbase_contexts(id,created_at,updated_at) VALUES(?,?,?)",args:[contextId,now,now]});}}
-    catch(e){return json(res,502,{error:"تعذر إنشاء/استعادة سياق Browserbase: "+e.message});}
-    try{const payload={browserContext:{id:contextId,persist:true},keepAlive:true,browserSettings:{verified:true},proxies:true};if(process.env.BROWSERBASE_PROJECT_ID)payload.projectId=process.env.BROWSERBASE_PROJECT_ID;const sr=await fetch("https://api.browserbase.com/v1/sessions",{method:"POST",headers:{"X-BB-API-Key":key,"Content-Type":"application/json"},body:JSON.stringify(payload)}),sj=await sr.json();if(!sr.ok||!sj.id)throw Error(sj.message||sj.error||"فشل إنشاء الجلسة");return json(res,201,{sessionId:sj.id,contextReused,liveViewUrl:sj.liveViewUrl||sj.live_view_url||"",sessionUrl:"https://browserbase.com/sessions/"+sj.id,expiresAt:sj.expiresAt||null});}catch(e){return json(res,502,{error:"تعذر بدء جلسة Browserbase: "+e.message});}
   }
   if (req.method === "GET" && url.pathname === "/api/health") {
     if (isVercel && usingLocalDb) return json(res, 503, { ok: false, connected: false, database: "unconfigured", configIncomplete: true });
