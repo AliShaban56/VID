@@ -254,7 +254,12 @@ async function handleApi(req, res, url) {
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "public, max-age=3600", "x-content-type-options": "nosniff" });
       return res.end(script);
     }
-  if (isVercel && url.pathname !== "/api/health" && !validSession(req)) {
+  let agentAuthorized = false;
+  if (url.pathname.startsWith("/api/agent/")) {
+    try { if (!db || usingLocalDb) return json(res, 503, { error: "Agent Control requires connected Turso database." }); await db.execute("CREATE TABLE IF NOT EXISTS agent_control_tokens (id INTEGER PRIMARY KEY CHECK (id = 1), token_hash TEXT NOT NULL, created_at TEXT NOT NULL)"); const auth = req.headers.authorization || ""; const supplied = auth.startsWith("Bearer ") ? auth.slice(7).trim() : ""; const row = (await db.execute("SELECT token_hash FROM agent_control_tokens WHERE id = 1")).rows[0]; const hash = supplied ? createHash("sha256").update(supplied).digest("hex") : ""; agentAuthorized = Boolean(row?.token_hash && hash && hash === row.token_hash); } catch { return json(res, 503, { error: "Agent Control authentication unavailable." }); }
+    if (!agentAuthorized) return json(res, 401, { error: "Agent token missing or invalid." });
+  }
+  if (isVercel && url.pathname !== "/api/health" && !agentAuthorized && !validSession(req)) {
     return json(res, process.env.APP_ACCESS_PASSWORD && process.env.APP_SESSION_SECRET ? 401 : 503, { error: "سجّل دخولك أو اضبط حماية التطبيق في إعدادات Vercel." });
   }
   if (req.method === "GET" && url.pathname === "/api/health") {
@@ -320,6 +325,27 @@ async function handleApi(req, res, url) {
       console.error("MCP token settings failed:", error.message);
       return json(res, 503, { error: "تعذر إدارة مفتاح MCP. تأكد من اتصال قاعدة Turso." });
     }
+  }
+  if (url.pathname === "/api/settings/agent-token") {
+    if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "Turso disconnected." });
+    try { await db.execute("CREATE TABLE IF NOT EXISTS agent_control_tokens (id INTEGER PRIMARY KEY CHECK (id = 1), token_hash TEXT NOT NULL, created_at TEXT NOT NULL)"); if (req.method === "GET") { const row = (await db.execute("SELECT created_at FROM agent_control_tokens WHERE id = 1")).rows[0]; return json(res, 200, { configured: Boolean(row), createdAt: row?.created_at || null, baseUrl: "https://vid-ali-b36b.vercel.app/api/agent" }); } if (req.method === "POST") { const body = await readBody(req); if (body.action === "revoke") { await db.execute("DELETE FROM agent_control_tokens WHERE id = 1"); return json(res, 200, { ok: true, configured: false }); } if (body.action !== "generate") return json(res, 400, { error: "Invalid action." }); const token = "hka_" + randomBytes(40).toString("base64url"); const tokenHash = createHash("sha256").update(token).digest("hex"); const createdAt = new Date().toISOString(); await db.execute({ sql: "INSERT INTO agent_control_tokens (id, token_hash, created_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET token_hash = excluded.token_hash, created_at = excluded.created_at", args: [tokenHash, createdAt] }); return json(res, 200, { ok: true, token, createdAt, baseUrl: "https://vid-ali-b36b.vercel.app/api/agent", warning: "Copy this token now; it will not be shown again." }); } return json(res, 405, { error: "Method not allowed." }); } catch { return json(res, 503, { error: "Agent Control token management failed." }); }
+  }
+  if (agentAuthorized && req.method === "GET" && url.pathname === "/api/agent/status") return json(res, 200, { ok: true, service: "Hekaya Studio Agent Control", version: 1, capabilities: ["agnes-video-generation", "agnes-job-status", "kie-video-generation", "kie-job-status"], timezone: "Africa/Cairo" });
+  if (agentAuthorized && req.method === "POST" && url.pathname === "/api/agent/agnes/videos") {
+    const body = await readBody(req); if (!validText(body.prompt, 4000) || typeof body.imageUrl !== "string" || !body.imageUrl.startsWith("https://")) return json(res, 400, { error: "Prompt and HTTPS imageUrl are required." }); if (!db || usingLocalDb) return json(res, 503, { error: "Turso unavailable for Agnes key retrieval." });
+    try { const stored = await db.execute("SELECT secret FROM agnes_api_keys WHERE id = 1"); const apiKey = stored.rows[0]?.secret; if (!apiKey) return json(res, 409, { error: "Agnes key not configured." }); const upstream = await fetch("https://apihub.agnes-ai.com/v1/videos", { method: "POST", headers: { authorization: "Bearer " + apiKey, "content-type": "application/json" }, body: JSON.stringify({ model: "agnes-video-2.5-flash", prompt: body.prompt.trim(), mode: "keyframe", first_frame: body.imageUrl, seconds: "8", size: "720P", aspect_ratio: "9:16", n: 1 }) }); const data = await upstream.json().catch(() => ({})); if (!upstream.ok) return json(res, upstream.status, { error: data.error?.message || data.message || "Agnes request failed." }); const videoId = data.video_id || data.id || data.task_id || data.data?.video_id || data.data?.id || data.data?.task_id; if (!videoId) return json(res, 502, { error: "Agnes response missing task ID." }); return json(res, 202, { videoId: String(videoId), model: "agnes-video-2.5-flash" }); } catch { return json(res, 502, { error: "Agnes connection error." }); }
+  }
+  if (agentAuthorized && req.method === "GET" && url.pathname === "/api/agent/agnes/jobs") {
+    const videoId = url.searchParams.get("videoId"); if (!validText(videoId, 200) || !db || usingLocalDb) return json(res, 400, { error: "Invalid task ID or database unavailable." });
+    try { const stored = await db.execute("SELECT secret FROM agnes_api_keys WHERE id = 1"); const apiKey = stored.rows[0]?.secret; if (!apiKey) return json(res, 409, { error: "Agnes key not configured." }); const upstream = await fetch("https://apihub.agnes-ai.com/agnesapi?video_id=" + encodeURIComponent(videoId) + "&model_name=agnes-video-2.5-flash", { headers: { authorization: "Bearer " + apiKey } }); const data = await upstream.json().catch(() => ({})); if (!upstream.ok) return json(res, upstream.status, { error: data.message || "Agnes status failed." }); return json(res, 200, { videoId, status: data.status || data.data?.status || "processing", videoUrl: data.url || data.data?.url || data.video_url || data.data?.video_url || null, progress: data.progress ?? data.data?.progress ?? null, error: data.error || data.data?.error || "" }); } catch { return json(res, 502, { error: "Agnes status connection error." }); }
+  }
+  if (agentAuthorized && req.method === "POST" && url.pathname === "/api/agent/kie/videos") {
+    const body = await readBody(req); if (!validText(body.prompt, 4000) || typeof body.imageUrl !== "string" || !body.imageUrl.startsWith("https://")) return json(res, 400, { error: "Prompt and HTTPS imageUrl are required." });
+    try { const { result } = await kieRequest("/api/v1/jobs/createTask", { model: "grok-imagine-video-1-5-preview", input: { prompt: body.prompt.trim(), image_urls: [body.imageUrl], aspect_ratio: "9:16", resolution: "480p", duration: 8 } }); const taskId = result?.data?.taskId; if (!taskId) return json(res, 502, { error: "Kie.ai response missing taskId." }); return json(res, 202, { taskId, model: "grok-imagine-video-1-5-preview" }); } catch (error) { return json(res, error.status || 502, { error: error.message }); }
+  }
+  if (agentAuthorized && req.method === "GET" && url.pathname === "/api/agent/kie/jobs") {
+    const taskId = url.searchParams.get("taskId"); if (!validText(taskId, 200)) return json(res, 400, { error: "Invalid taskId." });
+    try { const { result } = await kieRequest("/api/v1/jobs/recordInfo?taskId=" + encodeURIComponent(taskId)); const data = result?.data || {}; let parsed = {}; try { parsed = typeof data.resultJson === "string" ? JSON.parse(data.resultJson) : (data.resultJson || {}); } catch {} return json(res, 200, { taskId, state: data.state || "unknown", progress: data.progress ?? null, resultUrls: parsed.resultUrls || [], failMsg: data.failMsg || "" }); } catch (error) { return json(res, error.status || 502, { error: error.message }); }
   }
   if (url.pathname === "/api/settings/agnes-key") {
     if (isVercelDeployment && (!db || usingLocalDb)) return json(res, 503, { error: "قاعدة Turso غير متصلة؛ لا يمكن حفظ مفتاح Agnes AI." });
