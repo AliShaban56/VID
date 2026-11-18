@@ -1,6 +1,7 @@
 (() => {
  const navSettings = document.querySelector('[data-nav="الإعدادات"]');
- if (!navSettings) return;
+ const navAgent = document.querySelector('[data-nav="الوكيل الذكي"]');
+ if (!navSettings && !navAgent) return;
  const style = document.createElement("style");
  style.textContent = ".agent-panel{position:fixed;inset:0;background:#17221d66;z-index:30;display:grid;place-items:center;padding:20px}.agent-card{width:min(560px,100%);background:var(--paper,#fff);color:var(--ink,#17221d);border-radius:18px;padding:22px;box-shadow:0 20px 70px #0003}.agent-card h2{margin:0 0 8px}.agent-card p{line-height:1.8;color:var(--muted,#78837b)}.agent-actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:16px}.agent-actions button{border:1px solid #dce5dc;border-radius:10px;padding:10px 14px;background:#fff;cursor:pointer}.agent-actions .primary{background:#176b4a;color:white;border-color:#176b4a}.agent-token{display:block;word-break:break-all;background:#f3f6f1;padding:12px;border-radius:10px;margin-top:10px;font-family:monospace}.agent-danger{color:#ad443c}.agent-note{font-size:11px!important}";
  document.head.append(style);
