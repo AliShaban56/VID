@@ -75,16 +75,25 @@ async function getKieKeys(db) {
   if (!keys.length) throw new Error("No Kie.ai key is configured in Hekaya.");
   return keys;
 }
+async function nextKieKeyIndex(db, count) {
+  await db.execute("CREATE TABLE IF NOT EXISTS kie_key_rotation (id INTEGER PRIMARY KEY CHECK (id = 1), next_index INTEGER NOT NULL DEFAULT 0)");
+  await db.execute("INSERT OR IGNORE INTO kie_key_rotation (id, next_index) VALUES (1, 0)");
+  const result = await db.execute({ sql: "UPDATE kie_key_rotation SET next_index = (next_index + 1) % ? WHERE id = 1 RETURNING (next_index + ? - 1) % ? AS assigned_index", args: [count, count, count] });
+  return Number(result.rows[0]?.assigned_index || 0);
+}
 async function kieCreate(db, model, input) {
   const keys = await getKieKeys(db);
+  const start = await nextKieKeyIndex(db, keys.length);
+  const ordered = keys.map((_, index) => keys[(start + index) % keys.length]);
   let last = "Kie.ai request failed";
-  for (const key of keys) {
+  for (const key of ordered) {
     const response = await fetch("https://api.kie.ai/api/v1/jobs/createTask", { method: "POST", headers: { Authorization: "Bearer " + key.secret, "Content-Type": "application/json" }, body: JSON.stringify({ model, input }) });
     const data = await response.json().catch(() => ({}));
-    if (response.ok && Number(data.code) === 200 && data.data?.taskId) return { taskId: data.data.taskId, model };
+    if (response.ok && Number(data.code) === 200 && data.data?.taskId) return { taskId: data.data.taskId, model, keyLabel: key.id };
     last = data.msg || last;
-    const insufficientCredits = Number(data.code || response.status) === 402 || /insufficient credits|credits insufficient|not enough credits|insufficient balance/i.test(String(data.msg || data.message || ""));
-    if (![401, 429].includes(Number(data.code || response.status)) && !insufficientCredits) break;
+    const code = Number(data.code || response.status);
+    const insufficientCredits = code === 402 || /insufficient credits|credits insufficient|not enough credits|insufficient balance/i.test(String(data.msg || data.message || ""));
+    if (![401, 429].includes(code) && !insufficientCredits) break;
   }
   throw new Error(last);
 }
