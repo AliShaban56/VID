@@ -102,7 +102,7 @@ document.addEventListener('click',async e=>{let b=e.target.closest('button');if(
  document.querySelector('[data-nav="الإعدادات"]')?.addEventListener("click",()=>refresh());
 })();
 </script><script>(()=>{const button=document.querySelector('#themeToggle');if(!button)return;const apply=dark=>{document.body.classList.toggle('dark',dark);button.textContent=dark?'☀':'☾';button.setAttribute('aria-label',dark?'تفعيل الوضع النهاري':'تفعيل الوضع الليلي');button.title=dark?'الوضع النهاري':'الوضع الليلي'};apply(localStorage.getItem('hekaya-theme')==='dark');button.addEventListener('click',()=>{const dark=!document.body.classList.contains('dark');localStorage.setItem('hekaya-theme',dark?'dark':'light');apply(dark)})})();</script>
-<script src="/workflow-ui.js" defer></script><script src="/auth-ui.js" defer></script><script src="/kie-ui.js" defer></script><script src="/agnes-settings.js" defer></script><script src="/flow-accounts-ui.js" defer></script><script src="/editor-ui.js" defer></script><style>
+<script src="/workflow-ui.js" defer></script><script src="/auth-ui.js" defer></script><script src="/kie-ui.js" defer></script><script src="/agnes-settings.js" defer></script><script src="/flow-accounts-ui.js" defer></script><script src="/agent-control-ui.js" defer><script src="/editor-ui.js" defer></script><style>
 /* Compact, scroll-safe navigation */
 .sidebar{width:224px;padding:18px 14px;overflow-y:auto;overscroll-behavior:contain}
 .brand{padding-bottom:22px}
