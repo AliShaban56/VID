@@ -11,11 +11,11 @@ const json = (res, status, body, extra = {}) => {
 };
 const textResult = (value, isError = false) => ({ content: [{ type: "text", text: typeof value === "string" ? value : JSON.stringify(value) }], ...(isError ? { isError: true } : {}) });
 const tools = [
-  { name: "hekaya_generate_image", description: "Generate a vertical story image with the configured Kie.ai account.", securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }], inputSchema: { type: "object", properties: { prompt: { type: "string", maxLength: 4000 }, aspectRatio: { type: "string", enum: ["9:16", "16:9", "1:1"] } }, required: ["prompt"], additionalProperties: false } },
-  { name: "hekaya_generate_video", description: "Animate a generated image into an 8-second vertical video. Supply a public HTTPS image URL.", securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }], inputSchema: { type: "object", properties: { prompt: { type: "string", maxLength: 4000 }, imageUrl: { type: "string", maxLength: 2000 } }, required: ["prompt", "imageUrl"], additionalProperties: false } },
-  { name: "hekaya_check_generation", description: "Check a Kie.ai image or video generation task and retrieve its result URLs.", securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }], inputSchema: { type: "object", properties: { taskId: { type: "string", maxLength: 200 } }, required: ["taskId"], additionalProperties: false } },
-  { name: "hekaya_save_draft", description: "Save a story draft in Hekaya Studio.", securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }], inputSchema: { type: "object", properties: { title: { type: "string", maxLength: 160 }, topic: { type: "string", maxLength: 2000 }, story: { type: "string", maxLength: 30000 }, platforms: { type: "array", items: { type: "string", maxLength: 40 }, maxItems: 4 } }, required: ["title", "topic", "story"], additionalProperties: false } },
-  { name: "hekaya_list_drafts", description: "List the latest saved story drafts in Hekaya Studio.", securitySchemes: [{ type: "oauth2", scopes: ["hekaya:use"] }], inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 30 } }, additionalProperties: false } }
+  { name: "hekaya_generate_image", description: "Generate a vertical story image with the configured Kie.ai account.", inputSchema: { type: "object", properties: { prompt: { type: "string", maxLength: 4000 }, aspectRatio: { type: "string", enum: ["9:16", "16:9", "1:1"] } }, required: ["prompt"], additionalProperties: false } },
+  { name: "hekaya_generate_video", description: "Animate a generated image into an 8-second vertical video. Supply a public HTTPS image URL.", inputSchema: { type: "object", properties: { prompt: { type: "string", maxLength: 4000 }, imageUrl: { type: "string", maxLength: 2000 } }, required: ["prompt", "imageUrl"], additionalProperties: false } },
+  { name: "hekaya_check_generation", description: "Check a Kie.ai image or video generation task and retrieve its result URLs.", inputSchema: { type: "object", properties: { taskId: { type: "string", maxLength: 200 } }, required: ["taskId"], additionalProperties: false } },
+  { name: "hekaya_save_draft", description: "Save a story draft in Hekaya Studio.", inputSchema: { type: "object", properties: { title: { type: "string", maxLength: 160 }, topic: { type: "string", maxLength: 2000 }, story: { type: "string", maxLength: 30000 }, platforms: { type: "array", items: { type: "string", maxLength: 40 }, maxItems: 4 } }, required: ["title", "topic", "story"], additionalProperties: false } },
+  { name: "hekaya_list_drafts", description: "List the latest saved story drafts in Hekaya Studio.", inputSchema: { type: "object", properties: { limit: { type: "integer", minimum: 1, maximum: 30 } }, additionalProperties: false } }
 ];
 const valid = (v, max) => typeof v === "string" && v.trim().length > 0 && v.length <= max;
 async function readBody(req) {
@@ -136,10 +136,10 @@ const formBody = async (req) => { let raw=""; for await (const c of req) { raw+=
 const page = (title, body) => `<!doctype html><html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font:16px system-ui;background:#f4f7f3;margin:0;display:grid;place-items:center;min-height:100vh;color:#17221d}.card{background:white;padding:28px;border-radius:18px;width:min(420px,calc(100% - 40px));box-shadow:0 12px 40px #0001}input,button{font:inherit;width:100%;box-sizing:border-box;padding:13px;margin-top:12px;border:1px solid #dce5dc;border-radius:9px}button{background:#176b4a;color:white;border:0;font-weight:700;cursor:pointer}.muted{color:#69746c;font-size:14px;line-height:1.8}</style><main class="card"><h2>${title}</h2>${body}</main></html>`;
 async function oauth(req,res,url) {
   const path=url.pathname;
-  if (req.method==="GET" && path==="/.well-known/oauth-protected-resource") {
+  if (req.method==="GET" && (path==="/.well-known/oauth-protected-resource" || path==="/api/mcp/.well-known/oauth-protected-resource")) {
     return json(res,200,{resource:RESOURCE,authorization_servers:[ISSUER],scopes_supported:["hekaya:use"],resource_documentation:BASE});
   }
-  if (req.method==="GET" && path==="/.well-known/oauth-authorization-server") {
+  if (req.method==="GET" && (path==="/.well-known/oauth-authorization-server" || path==="/api/mcp/.well-known/oauth-authorization-server")) {
     return json(res,200,{issuer:ISSUER,authorization_endpoint:BASE+"/api/mcp/authorize",token_endpoint:BASE+"/api/mcp/token",registration_endpoint:BASE+"/api/mcp/register",response_types_supported:["code"],grant_types_supported:["authorization_code","refresh_token"],code_challenge_methods_supported:["S256"],token_endpoint_auth_methods_supported:["none"],scopes_supported:["hekaya:use"]});
   }
   if (path==="/api/mcp/register" && req.method==="POST") {
@@ -227,7 +227,6 @@ export default async function handler(req, res) {
     if(oauthResult!==false) return oauthResult;
   } catch(error) { return json(res,500,{error:"OAuth service unavailable"}); }
   if(req.method!=="POST") return json(res,405,{error:"Use POST for the MCP Streamable HTTP endpoint."},{allow:"POST"});
-  if(!(await authorized(req))) return json(res,401,{error:"Unauthorized"},{"www-authenticate":'Bearer realm="Hekaya MCP", resource_metadata="https://vid-ali-b36b.vercel.app/.well-known/oauth-protected-resource", scope="hekaya:use"'});
   let body;
   try {body=await readBody(req);} catch {return json(res,400,{error:"Invalid JSON-RPC request"});}
   if(body.method==="notifications/initialized" || body.method?.startsWith("notifications/")) return res.end();
@@ -239,6 +238,7 @@ export default async function handler(req, res) {
   if(body.method==="ping") return reply({});
   if(body.method==="tools/list") return reply({tools});
   if(body.method==="tools/call") {
+    if(!(await authorized(req))) return reply({content:[{type:"text",text:"سجّل الدخول لربط حكاية واستخدام الأدوات."}],isError:true,_meta:{"mcp/www_authenticate":['Bearer resource_metadata="https://vid-ali-b36b.vercel.app/.well-known/oauth-protected-resource", error="invalid_token", error_description="OAuth authorization is required"']}});
     const name=body.params?.name;
     if(!tools.some(t=>t.name===name)) return fail(-32602,"Unknown tool");
     try {return reply(await callTool(name,body.params?.arguments||{}));}
