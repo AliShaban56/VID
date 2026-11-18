@@ -96,7 +96,7 @@ async function callTool(name, args) {
       return textResult(result);
     }
     if (name === "hekaya_generate_video") {
-      if (!valid(args.prompt, 4000) || !valid(args.imageUrl, 2000) || !/^https:\\/\\//i.test(args.imageUrl)) throw new Error("prompt and a public HTTPS imageUrl are required.");
+      if (!valid(args.prompt, 4000) || !valid(args.imageUrl, 2000) || !/^https:\/\//i.test(args.imageUrl)) throw new Error("prompt and a public HTTPS imageUrl are required.");
       const result = await kieCreate(db, "grok-imagine-video-1-5-preview", { prompt: args.prompt.trim(), image_urls: [args.imageUrl], aspect_ratio: "9:16", resolution: "480p", duration: 8 });
       return textResult(result);
     }
