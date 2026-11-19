@@ -8,5 +8,18 @@
       "source": "/.well-known/oauth-authorization-server",
       "destination": "/api/mcp/.well-known/oauth-authorization-server"
     }
-  ]
+  ],
+  "functions": {
+    "api/video-queue-worker.mjs": {
+      "maxDuration": 300,
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "hekaya-video-scenes",
+          "retryAfterSeconds": 60,
+          "initialDelaySeconds": 0
+        }
+      ]
+    }
+  }
 }
