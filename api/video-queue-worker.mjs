@@ -1,5 +1,6 @@
 import { createClient } from "@libsql/client";
-import { handleCallback, send } from "@vercel/queue";
+import { QueueClient, send } from "@vercel/queue";
+const queueClient = new QueueClient();
 const TOPIC="hekaya-video-scenes";
 const db=()=>createClient({url:process.env.TURSO_DATABASE_URL,authToken:process.env.TURSO_AUTH_TOKEN});
 async function agnesRequest(c,path,payload){
@@ -84,7 +85,7 @@ async function run(message){
     await again(message.queueId,"resume:"+s.id+":"+Math.floor(Date.now()/30000),20);
   }finally{c.close();}
 }
-export const POST=handleCallback(async(message,metadata)=>{
+export default queueClient.handleNodeCallback(async(message,metadata)=>{
   try{await run(message);}
   catch(e){console.error("Hekaya queue error",{queueId:message?.queueId,deliveryCount:metadata?.deliveryCount,error:e.message});throw e;}
 },{visibilityTimeoutSeconds:180,retry:(_e,m)=>({afterSeconds:Math.min(300,15*Math.max(1,m.deliveryCount||1))})});
