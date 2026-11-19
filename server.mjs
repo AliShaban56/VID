@@ -67,9 +67,11 @@ let db = usingLocalDb && isVercelDeployment ? null : createClient(usingLocalDb
      try{
        response=await fetch("https://apihub.agnes-ai.com"+pathname,{method:payload===undefined?"GET":"POST",headers:{authorization:"Bearer "+key.secret,"content-type":"application/json"},...(payload===undefined?{}:{body:JSON.stringify(payload)})});
        data=await response.json().catch(()=>({}));
-     }catch{
-       if(!retryNetwork) throw Object.assign(new Error("Agnes connection error; request was not retried to avoid duplicate video jobs."),{status:502});
-       lastStatus=502;continue;
+     }catch(networkError){
+       if(!retryNetwork) throw Object.assign(new Error("تعذر الاتصال بـ Agnes. لم نكرر طلب إنشاء الفيديو تلقائيًا لتجنب إنشاء مهمة مكررة. أعد المحاولة يدويًا."),{status:502});
+       lastStatus=502;lastMsg="تعذر الاتصال بخدمة Agnes.";
+       // Safe retries are restricted to read-only status checks, never generation POSTs.
+       continue;
      }
      if(response.ok){agnesInvalidKeys.delete(key.id);agnesCooldowns.delete(key.id);return {data,keyId:key.id};}
      lastStatus=response.status;lastMsg=data.error?.message||data.message||data.error||"Agnes request failed.";
