@@ -65,7 +65,7 @@ let db = usingLocalDb && isVercelDeployment ? null : createClient(usingLocalDb
    for(const key of available){
      let response,data;
      try{
-       response=await fetch("https://apihub.agnes-ai.com"+pathname,{method:payload===undefined?"GET":"POST",headers:{authorization:"Bearer "+key.secret,"content-type":"application/json"},...(payload===undefined?{}:{body:JSON.stringify(payload)})});
+       response=await fetch("https://apihub.agnes-ai.com"+pathname,{method:payload===undefined?"GET":"POST",headers:{authorization:"Bearer "+key.secret,"content-type":"application/json"},...(payload===undefined?{}:{body:JSON.stringify(payload)}),signal:AbortSignal.timeout(payload===undefined?30000:90000)});
        data=await response.json().catch(()=>({}));
      }catch(networkError){
        if(!retryNetwork) throw Object.assign(new Error("تعذر الاتصال بـ Agnes. لم نكرر طلب إنشاء الفيديو تلقائيًا لتجنب إنشاء مهمة مكررة. أعد المحاولة يدويًا."),{status:502});
@@ -436,8 +436,11 @@ async function handleApi(req, res, url) {
     if (!validText(videoId, 200)) return json(res, 400, { error: "رقم المهمة غير صالح." });
     try {
       const { data, keyId } = await agnesRequest("/agnesapi?video_id=" + encodeURIComponent(videoId) + "&model_name=agnes-video-2.5-flash", undefined, { retryNetwork: true });
-      const task = data.data || data;
-      return json(res, 200, { videoId, status: task.status || "processing", videoUrl: task.url || task.video_url || task.videoUrl || null, progress: task.progress ?? null, error: task.error || task.message || "", provider: "Agnes AI", keyId });
+      const task = data.data || data.result || data.task || data;
+      const videoUrl = task.url || task.video_url || task.videoUrl || task.output?.url || task.output?.video_url || task.result?.url || task.result?.video_url || data.url || data.video_url || null;
+      const rawStatus = String(task.status || task.state || data.status || "processing").toLowerCase();
+      const status = videoUrl ? "completed" : (["success","succeeded","done","finished"].includes(rawStatus) ? "completed" : (["failed","error"].includes(rawStatus) ? "failed" : rawStatus));
+      return json(res, 200, { videoId, status, videoUrl, progress: task.progress ?? task.percent ?? null, error: task.error || task.message || data.error || "", provider: "Agnes AI", keyId });
     } catch (error) { return json(res, error.status || 502, { error: "تعذر فحص مهمة Agnes: " + error.message }); }
   }
   if (req.method === "GET" && url.pathname === "/api/drafts") {
