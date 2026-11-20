@@ -1,45 +1,41 @@
 import { requireAccess } from './_auth.js';
+import { magicHourRequest } from './_magichour.js';
+import { init } from './_db.js';
+
 export default async function handler(req, res) {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   if (!requireAccess(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  res.setHeader('Cache-Control', 'no-store');
 
-  const apiKey = process.env.IMAGE_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
-    const baseUrl = (process.env.IMAGE_API_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, '');
-  const endpoint = process.env.IMAGE_API_ENDPOINT || (baseUrl + '/v1/images/generations');
-  const defaultModel = process.env.IMAGE_MODEL || 'gpt-image-1';
-  if (!apiKey) return res.status(503).json({ error: 'Image API is not configured. Add IMAGE_API_KEY or AI_API_KEY in Vercel.' });
-
-  const { prompt, model, size, quality } = req.body || {};
-  if (typeof prompt !== 'string' || !prompt.trim() || prompt.length > 8000) {
-    return res.status(400).json({ error: 'Prompt required (max 8000 chars).' });
-  }
+  const body = req.body || {};
+  const prompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
+  if (!prompt || prompt.length > 8000) return res.status(400).json({ error: 'اكتب وصف الصورة (بحد أقصى 8000 حرف).' });
+  const aspectRatio = ['1:1','16:9','9:16','4:3','3:4'].includes(body.aspectRatio) ? body.aspectRatio : '9:16';
+  const model = process.env.MAGICHOUR_IMAGE_MODEL || 'z-image-turbo';
 
   try {
-    const upstream = await fetch(endpoint, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: model || defaultModel,
-        prompt: prompt.trim(),
-        size: size || '1024x1024',
-        ...(quality ? { quality } : {})
-      })
+    const result = await magicHourRequest('/v1/ai-image-generator', {
+      name: String(body.name || 'Hekaya scene image').slice(0, 120),
+      image_count: 1,
+      style: { prompt, tool: 'general' },
+      aspect_ratio: aspectRatio,
+      model,
+      resolution: process.env.MAGICHOUR_IMAGE_RESOLUTION || '1k'
     });
-    const raw = await upstream.text();
-    let data;
-    try { data = JSON.parse(raw); } catch { data = { raw }; }
-    if (!upstream.ok) {
-      return res.status(upstream.status).json({ error: data?.error?.message || data?.message || 'Image provider returned an error.' });
+    const projectId = result?.id;
+    if (!projectId) return res.status(502).json({ error: 'Magic Hour لم يُرجع معرّف مشروع الصورة.' });
+    if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
+      try {
+        const db = await init();
+        await db.execute({
+          sql: 'INSERT INTO generation_jobs(id,project_id,scene_id,kind,model,prompt,status) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
+          args: [projectId, typeof body.projectId === 'string' ? body.projectId : null, typeof body.sceneId === 'string' ? body.sceneId : null, 'image', model, prompt.slice(0, 2000), 'queued']
+        });
+      } catch {}
     }
-    const item = data?.data?.[0] || {};
-    const imageUrl = item.url || data?.image_url || data?.url;
-    const imageData = item.b64_json ? 'data:image/png;base64,' + item.b64_json : null;
-    if (!imageUrl && !imageData) {
-      return res.status(502).json({ error: 'Provider response did not include an image URL or base64 image.' });
-    }
-    return res.status(200).json({ imageUrl: imageUrl || imageData, model: model || defaultModel });
+    return res.status(202).json({ provider: 'magichour', projectId, status: 'queued', model, creditsCharged: result.credits_charged || null });
   } catch (error) {
-    return res.status(502).json({ error: 'Image provider connection failed: ' + error.message });
+    return res.status(502).json({ error: error.message || 'فشل طلب توليد الصورة من Magic Hour.' });
   }
 }
