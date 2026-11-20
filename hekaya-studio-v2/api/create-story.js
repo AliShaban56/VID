@@ -1,3 +1,4 @@
+import { requireAccess } from './_auth.js';
 import { init } from './_db.js';
 
 function parseJson(value) {
@@ -14,6 +15,7 @@ function text(value, fallback = '') {
 }
 
 export default async function handler(req, res) {
+  if (!requireAccess(req, res)) return;
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
