@@ -34,7 +34,8 @@ export default async function handler(req, res) {
   const audience = text(body.audience, 'عام');
   const duration = Math.max(30, Math.min(900, Number(body.durationSeconds) || 120));
   const visualStyle = text(body.visualStyle, 'سينمائي واقعي، اتساق بصري ثابت للشخصيات');
-  const sceneCount = Math.max(3, Math.min(30, Number(body.sceneCount) || Math.ceil(duration / 12)));
+  const requestedSceneCount = Number(body.sceneCount) || Math.ceil(duration / 12);
+  const sceneCount = Math.max(3, Math.min(30, Math.max(Math.ceil(duration / 15), requestedSceneCount)));
 
   const system = [
     'You are the head writer, showrunner, storyboard artist, and production planner for a professional AI video studio.',
@@ -114,7 +115,7 @@ export default async function handler(req, res) {
       id: 'scene-' + (index + 1),
       position: index,
       title: text(scene.title, 'مشهد ' + (index + 1)),
-      durationSeconds: Math.max(2, Math.min(90, Number(scene.durationSeconds) || 8)),
+      durationSeconds: Math.max(4, Math.min(15, Number(scene.durationSeconds) || Math.ceil(duration / Math.max(3, result.scenes.length)))),
       narration: text(scene.narration),
       dialogue: text(scene.dialogue),
       imagePrompt: text(scene.imagePrompt),
