@@ -126,9 +126,8 @@ export default async function handler(req, res) {
     }));
 
     let database = { saved: false };
-    if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
-      try {
-        const d = await init();
+    try {
+        const d = await init(req);
         const projectId = crypto.randomUUID();
         await d.execute({
           sql: 'INSERT INTO projects(id,title,story) VALUES(?,?,?)',
@@ -145,11 +144,8 @@ export default async function handler(req, res) {
           });
         }
         database = { saved: true, projectId };
-      } catch (error) {
-        database = { saved: false, warning: 'The story was generated, but database saving failed: ' + error.message };
-      }
-    } else {
-      database.warning = 'Turso is not configured; the generated package is returned to the browser but is not yet persisted.';
+    } catch (error) {
+      database = { saved: false, warning: 'The story was generated, but database saving failed: ' + error.message };
     }
 
     return res.status(200).json({ ...result, database, model });
