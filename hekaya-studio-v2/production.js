@@ -169,34 +169,50 @@
     const root=$('providerStatusList');root.innerHTML='<div class="progress">جارٍ فحص...</div>';
     try{
       const d=await api('/api/provider-status',null,'GET');
-      root.innerHTML=(d.providers||[]).map(p=>'<article class="panel"><div class="row" style="justify-content:space-between"><b>'+esc(p.label)+'</b><span class="asset-type">'+esc(p.state==='ok'?'متصل':p.state==='missing'?'غير مضاف':'مشكلة')+'</span></div><p class="mono muted">'+esc(p.env||'')+'</p><p>'+esc(p.detail||'')+'</p><p class="muted">'+esc([p.model,p.videoModel,p.environment].filter(Boolean).join(' • '))+'</p></article>').join('');
+      root.innerHTML=(d.providers||[]).map(p=>{
+        const stateClass=p.state==='ok'?'connected':p.state==='missing'?'missing':'error';
+        const stateLabel=p.state==='ok'?'متصل':p.state==='missing'?'غير مضاف':'غير متصل';
+        if(p.id==='database')setDatabaseIndicator(stateClass,stateLabel);
+        return '<article class="panel"><div class="row" style="justify-content:space-between"><b>'+esc(p.label)+'</b><span class="provider-connection"><i class="connection-lamp '+stateClass+'" aria-hidden="true"></i>'+stateLabel+'</span></div><p class="mono muted">'+esc(p.env||'')+'</p><p>'+esc(p.detail||'')+'</p><p class="muted">'+esc([p.model,p.videoModel,p.environment].filter(Boolean).join(' • '))+'</p></article>';
+      }).join('');
       $('providerStatusUpdated').textContent='آخر فحص: '+new Date(d.checkedAt).toLocaleString('ar-EG');
     }catch(e){root.innerHTML='<div class="progress">'+esc(e.message)+'</div>';}
   };
+  function setDatabaseIndicator(state,label){
+    const root=$('databaseConnectionIndicator');
+    if(!root)return;
+    const safeState=['connected','missing','error','checking'].includes(state)?state:'missing';
+    root.innerHTML='<i class="connection-lamp '+safeState+'" aria-hidden="true"></i><span>'+esc(label)+'</span>';
+  }
   function setDatabaseSetupMessage(message){const root=$('databaseSetupStatus');if(!root)return;root.classList.remove('hidden');root.textContent=message;}
   window.connectDatabase=async()=>{
     const url=$('tursoDatabaseUrl')?.value.trim()||'';
     const token=$('tursoAuthToken')?.value.trim()||'';
     if(!url||!token){setDatabaseSetupMessage('أدخل Database URL وAuth Token أولًا.');return;}
+    setDatabaseIndicator('checking','جارٍ فحص الاتصال');
     setDatabaseSetupMessage('جارٍ اختبار الاتصال وإنشاء جداول حكاية...');
     try{
       const result=await api('/api/db-init',{action:'connect',databaseUrl:url,authToken:token});
       $('tursoAuthToken').value='';
       setDatabaseSetupMessage(result.message||'تم ربط قاعدة البيانات بنجاح.');
+      setDatabaseIndicator('connected','متصل');
       await refreshProviderStatuses();
       await refreshMagicKeys();
-    }catch(error){setDatabaseSetupMessage(error.message||'تعذر ربط قاعدة البيانات.');}
+    }catch(error){setDatabaseIndicator('error','فشل الاتصال');setDatabaseSetupMessage(error.message||'تعذر ربط قاعدة البيانات.');}
   };
   window.initializeDatabase=async()=>{
+    setDatabaseIndicator('checking','جارٍ فحص الاتصال');
     setDatabaseSetupMessage('جارٍ تهيئة الجداول...');
     try{
       const result=await api('/api/db-init',{action:'initialize'});
       setDatabaseSetupMessage(result.message||'تم تجهيز جداول قاعدة البيانات.');
+      setDatabaseIndicator('connected','متصل');
       await refreshProviderStatuses();
-    }catch(error){setDatabaseSetupMessage(error.message||'تعذر تهيئة الجداول.');}
+    }catch(error){setDatabaseIndicator('error','فشل الاتصال');setDatabaseSetupMessage(error.message||'تعذر تهيئة الجداول.');}
   };
   window.disconnectDatabase=async()=>{
     if(!confirm('فصل اتصال قاعدة البيانات المحفوظ لهذا المتصفح؟'))return;
+    setDatabaseIndicator('checking','جارٍ فصل الاتصال');
     setDatabaseSetupMessage('جارٍ فصل الاتصال...');
     try{
       const result=await api('/api/db-init',{action:'disconnect'});
