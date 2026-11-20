@@ -1,246 +1,123 @@
 (() => {
-  const byId = (id) => document.getElementById(id);
-  const escHtml = (value) => String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-  let pkg = null;
-
-  const providerStateLabels = {
-    ok: 'المفتاح مقبول',
-    missing: 'غير مضاف',
-    error: 'فيه مشكلة'
-  };
-
-  window.refreshProviderStatuses = async function () {
-    const root = byId('providerStatusList');
-    const updated = byId('providerStatusUpdated');
-    if (!root) return;
-    root.innerHTML = '<div class="status">جارٍ فحص المفاتيح والاتصال بالخدمات...</div>';
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  let packageData = null, projectId = null, scenes = [], images = [], renderId = null;
+  const storageKey = 'hekaya-v3-library';
+  function localSave() {
     try {
-      const response = await fetch('/api/provider-status', {cache: 'no-store'});
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'تعذر فحص الخدمات');
-      const cards = (data.providers || []).map(provider => {
-        const state = ['ok', 'missing', 'error'].includes(provider.state) ? provider.state : 'error';
-        const tone = state === 'ok' ? '#16794b' : state === 'missing' ? '#64748b' : '#b42318';
-        const background = state === 'ok' ? '#103628' : state === 'missing' ? '#202b45' : '#3b2028';
-        const meta = [
-          provider.model ? 'الموديل: ' + provider.model : '',
-          provider.videoModel ? 'فيديو: ' + provider.videoModel : '',
-          provider.speechModel ? 'تعليق صوتي: ' + provider.speechModel : '',
-          provider.musicModel ? 'موسيقى: ' + provider.musicModel : '',
-          provider.environment ? 'البيئة: ' + provider.environment : '',
-          provider.note || ''
-        ].filter(Boolean).join(' • ');
-        return '<article class="status" style="border:1px solid ' + tone + ';background:' + background + ';min-height:150px">' +
-          '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">' +
-          '<b>' + escHtml(provider.label) + '</b>' +
-          '<span style="color:' + tone + ';font-weight:700">' + escHtml(providerStateLabels[state]) + '</span></div>' +
-          '<p class="muted"><b>متغير الإعداد:</b> ' + escHtml(provider.env || '') + '</p>' +
-          (meta ? '<p class="muted">' + escHtml(meta) + '</p>' : '') +
-          '<p>' + escHtml(provider.detail || '') + '</p></article>';
-      }).join('');
-      root.innerHTML = cards || '<div class="status">لم يتم العثور على خدمات للفحص.</div>';
-      if (updated) {
-        const time = data.checkedAt ? new Date(data.checkedAt).toLocaleString('ar-EG') : '';
-        updated.textContent = (time ? 'آخر فحص: ' + time + ' — ' : '') + (data.note || '');
-      }
-    } catch (error) {
-      root.innerHTML = '<div class="status" style="color:#ffb4ab">تعذر فحص الخدمات: ' + escHtml(error.message) + '</div>';
-      if (updated) updated.textContent = 'أعد الفحص بعد التأكد من نشر آخر نسخة.';
-    }
-  };
-
-  window.createStory = async function () {
-    const concept = (byId('story')?.value || '').trim();
-    const status = byId('productionStatus');
-    if (!concept) { status.textContent = 'اكتب فكرة القصة أولاً.'; return; }
-    status.textContent = 'مدير الإنتاج يكتب القصة والسيناريو وأوامر المشاهد عبر API...';
-    try {
-      const response = await fetch('/api/create-story', {
-        method: 'POST', headers: {'content-type':'application/json'},
-        body: JSON.stringify({
-          concept, genre: byId('genre')?.value || 'دراما مشوقة',
-          durationSeconds: Number(byId('duration')?.value || 120),
-          sceneCount: Number(byId('sceneCount')?.value || 10),
-          visualStyle: byId('visualStyle')?.value || 'سينمائي واقعي',
-          language: 'Arabic'
-        })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'تعذر إنشاء القصة');
-      pkg = data;
-      byId('story').value = data.story;
-      localStorage.setItem('hekaya_story', data.story);
-      localStorage.setItem('hekaya_production_package', JSON.stringify(data));
-      if (data.database?.projectId) localStorage.setItem('hekaya_project_id', data.database.projectId);
-      byId('productionBrief').innerHTML =
-        '<h3>' + escHtml(data.title) + '</h3><p>' + escHtml(data.logline) + '</p>' +
-        '<p><b>دليل العالم البصري:</b> ' + escHtml(data.visualBible) + '</p>' +
-        '<p><b>اتجاه الموسيقى:</b> ' + escHtml(data.soundtrackDirection) + '</p>' +
-        '<p><b>الشخصيات:</b> ' + (data.characters || []).map(c => escHtml(c.name + ': ' + c.visualDescription)).join(' | ') + '</p>';
-      renderScenes();
-      status.textContent = 'اكتمل إعداد ' + data.scenes.length + ' مشاهد بواسطة ' + data.model + '. ' +
-        (data.database?.saved ? 'تم الحفظ في قاعدة البيانات.' : (data.database?.warning || 'تم حفظ النتيجة محليًا في هذا المتصفح.'));
-    } catch (error) {
-      status.textContent = 'تعذر إنشاء القصة: ' + error.message;
-    }
-  };
-
-  function renderScenes() {
-    const root = byId('scenes');
-    if (!root || !pkg) return;
-    root.innerHTML = (pkg.scenes || []).map((scene, i) =>
-      '<div class="panel"><b>مشهد ' + (i + 1) + ': ' + escHtml(scene.title) + '</b>' +
-      '<p><span class="muted">المدة: ' + scene.durationSeconds + ' ثانية</span></p>' +
-      '<p><b>السرد:</b> ' + escHtml(scene.narration || '—') + '</p>' +
-      '<p><b>الحوار:</b> ' + escHtml(scene.dialogue || '—') + '</p>' +
-      '<p><b>الكاميرا:</b> ' + escHtml(scene.camera || '—') + '</p>' +
-      '<p><b>الصوت:</b> ' + escHtml(scene.soundDesign || '—') + '</p>' +
-      '<p><b>أمر الصورة:</b> ' + escHtml(scene.imagePrompt || '—') + '</p>' +
-      '<p><b>أمر الفيديو:</b> ' + escHtml(scene.videoPrompt || '—') + '</p>' +
-      '<p><b>الاستمرارية:</b> ' + escHtml(scene.generationNotes || '—') + '</p>' +
-      '<button onclick="useScenePrompt(' + i + ',\'image\')">استخدم أمر الصورة</button>' +
-      '<button onclick="useScenePrompt(' + i + ',\'video\')">استخدم أمر الفيديو</button>' +
-      '<div id="scene-image-' + i + '">' + (scene.imageUrl ? '<img class="preview" src="' + escHtml(scene.imageUrl) + '" alt="مشهد ' + (i + 1) + '">' : '') + '</div></div>'
-    ).join('') || 'لا توجد مشاهد بعد.';
+      const all = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      const id = projectId || ('local-' + Date.now());
+      projectId = id;
+      const item = {id,title:packageData?.title||'مشروع حكاية',story:packageData?.story||'',packageData,scenes,images,finalVideo:all.find(x=>x.id===id)?.finalVideo||'',updatedAt:new Date().toISOString()};
+      const next=[item,...all.filter(x=>x.id!==id)];
+      localStorage.setItem(storageKey,JSON.stringify(next.slice(0,30)));
+    } catch {}
   }
-
-  window.useScenePrompt = function (index, type) {
-    const scene = pkg?.scenes?.[index];
-    if (!scene) return;
-    byId('prompt').value = type === 'video' ? scene.videoPrompt : scene.imagePrompt;
-    byId('msg').textContent = 'تم تحميل تعليمات ' + (type === 'video' ? 'الفيديو' : 'الصورة') + ' للمشهد ' + (index + 1) + '.';
-    byId('prompt').scrollIntoView({behavior:'smooth', block:'center'});
+  async function api(path,body,method='POST') {
+    const r=await fetch(path,{method,headers:body?{'content-type':'application/json'}:{},body:body?JSON.stringify(body):undefined,cache:'no-store'});
+    const data=await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(data.error||'تعذر الاتصال بالخادم');
+    return data;
+  }
+  function status(msg) { const s=$('productionStatus');s.classList.remove('hidden');s.textContent=msg; }
+  function showTab(tab) {
+    ['studio','library','providers'].forEach(t=>$(t).classList.toggle('hidden',t!==tab));
+    ['studio','library','providers'].forEach(t=>$('tab'+t[0].toUpperCase()+t.slice(1)).classList.toggle('active',t===tab));
+    if(tab==='library') refreshLibrary();
+    if(tab==='providers') refreshProviderStatuses();
+  }
+  window.showTab=showTab;
+  window.toggleTheme=()=>{const d=document.documentElement.getAttribute('data-theme')==='dark';document.documentElement.setAttribute('data-theme',d?'light':'dark');localStorage.setItem('hekaya-theme',d?'light':'dark');};
+  document.documentElement.setAttribute('data-theme',localStorage.getItem('hekaya-theme')||'light');
+  function renderStory(){
+    $('storyResult').classList.remove('hidden');
+    $('storyResult').innerHTML='<h2>'+esc(packageData.title)+'</h2><p><b>'+esc(packageData.logline||'')+'</b></p><p>'+esc(packageData.story||'')+'</p><p class="muted">الشخصيات: '+esc((packageData.characters||[]).map(x=>x.name).join('، '))+'</p><p class="muted">الاستمرارية: '+esc(packageData.visualBible||'')+'</p>';
+  }
+  function renderScenes(){
+    $('scenesResult').innerHTML=scenes.map((s,i)=>'<div class="scene"><div class="row" style="justify-content:space-between"><h3>المشهد '+(i+1)+' — '+esc(s.title)+'</h3><span class="asset-type">'+esc(s.durationSeconds)+' ثانية</span></div><p>'+esc(s.narration||'')+'</p><p class="muted">'+esc(s.dialogue||'')+'</p><p class="muted"><b>الصورة:</b> '+esc(s.imagePrompt||'')+'</p><p class="muted"><b>الحركة:</b> '+esc(s.videoPrompt||'')+'</p>'+(s.imageUrl?'<img src="'+esc(s.imageUrl)+'" alt="scene image">':'')+'<div class="row"><button class="secondary" onclick="generateSceneImage('+i+')">توليد صورة المشهد</button></div></div>').join('');
+  }
+  async function saveProjectAndScenes(){
+    if(!packageData) return;
+    if(!projectId) projectId=packageData.database?.projectId||'';
+    if(!projectId) try{const p=await api('/api/projects',{title:packageData.title,story:packageData.story});projectId=p.id;}catch{projectId='local-'+Date.now();}
+    try{await api('/api/projects',{id:projectId,title:packageData.title,story:packageData.story});}catch{}
+    for(let i=0;i<scenes.length;i++)try{
+      const s=scenes[i];await api('/api/scenes',{id:projectId+'-scene-'+i,projectId,position:i,text:[s.narration,s.dialogue].filter(Boolean).join('\n'),imagePrompt:s.imagePrompt,videoPrompt:s.videoPrompt,imageUrl:s.imageUrl||'',videoUrl:s.videoUrl||'',status:s.imageUrl?'image-ready':'script-ready'});
+    }catch{}
+    localSave();
+  }
+  async function makeStory(){
+    const concept=$('concept').value.trim();if(!concept)throw new Error('اكتب فكرة القصة أولاً.');
+    status('حكاية تكتب القصة وتجهز خطة الإنتاج...');
+    packageData=await api('/api/create-story',{concept,language:'Arabic',genre:'دراما مشوقة',durationSeconds:Number($('duration').value),sceneCount:Number($('sceneCount').value),visualStyle:$('style').value,audience:'عام'});
+    scenes=packageData.scenes||[];images=[];projectId=packageData.database?.projectId||null;
+    renderStory();renderScenes();await saveProjectAndScenes();
+    status('تمت كتابة القصة وتقسيم المشاهد. '+(packageData.database?.warning||''));
+  }
+  window.generateOnlyStory=async()=>{try{await makeStory();}catch(e){status(e.message);}};
+  window.generateSceneImage=async(index)=>{
+    const s=scenes[index];if(!s)return;
+    status('جارٍ توليد صورة المشهد '+(index+1)+'...');
+    const out=await api('/api/generate-image',{prompt:s.imagePrompt,model:undefined,size:'1024x1024',quality:'high'});
+    s.imageUrl=out.imageUrl||out.url;images[index]=s.imageUrl;renderScenes();await saveProjectAndScenes();
+    status('تم توليد صورة المشهد '+(index+1));return s.imageUrl;
   };
-
-  window.generate = async function () {
-    const prompt = (byId('prompt').value || '').trim();
-    const msg = byId('msg'), result = byId('result');
-    if (!prompt) { msg.textContent = 'اكتب وصفًا أولاً.'; return; }
-    msg.textContent = 'جارٍ التوليد عبر API الخادم...'; result.innerHTML = '';
-    try {
-      const response = await fetch('/api/generate-image', {
-        method: 'POST', headers: {'content-type':'application/json'},
-        body: JSON.stringify({prompt})
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'فشل توليد الصورة');
-      result.innerHTML = '<img class="preview" src="' + escHtml(data.imageUrl) + '" alt="Generated image">';
-      msg.textContent = 'اكتمل توليد الصورة.';
-    } catch (error) { msg.textContent = error.message; }
-  };
-
-
-  window.renderFinalVideo = async function () {
-    if (!pkg?.scenes?.length) {
-      const status = byId('renderStatus'); if (status) status.textContent = 'أنشئ القصة وخطة المشاهد أولاً.';
-      return;
-    }
-    const status = byId('renderStatus'), output = byId('videoOutput');
-    status.textContent = 'إرسال أوامر كل المشاهد إلى محرك الفيديو والصوت والموسيقى...';
-    if (output) output.innerHTML = '';
-    try {
-      const response = await fetch('/api/render-final-video', {
-        method: 'POST', headers: {'content-type':'application/json'},
-        body: JSON.stringify({
-          productionPackage: pkg,
-          projectId: localStorage.getItem('hekaya_project_id'),
-          aspectRatio: byId('videoAspectRatio')?.value || '16:9',
-          videoModel: byId('videoModel')?.value || undefined
-        })
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'تعذر بدء إنتاج الفيديو');
-      localStorage.setItem('hekaya_render_id', data.renderId);
-      localStorage.setItem('hekaya_render_version', data.version);
-      status.textContent = 'تم إرسال المشروع إلى Shotstack. حالة الرندر: ' + data.status + '. المدة المخططة: ' + data.estimatedDurationSeconds + ' ثانية. أتابع تجهيز ملف MP4...';
-      pollFinalVideo(data.renderId);
-    } catch (error) {
-      status.textContent = 'تعذر بدء الفيديو النهائي: ' + error.message;
-    }
-  };
-
-  async function pollFinalVideo(renderId) {
-    const status = byId('renderStatus');
-    try {
-      const response = await fetch('/api/final-video-status?id=' + encodeURIComponent(renderId));
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'تعذر قراءة حالة الفيديو');
-      if (data.status === 'done' && data.videoUrl) {
-        localStorage.setItem('hekaya_final_video_url', data.videoUrl);
-        if (status) status.textContent = 'اكتمل إنتاج الفيلم النهائي. ملف MP4 جاهز للمشاهدة.';
-        const output = byId('videoOutput');
-        if (output) output.innerHTML = '<video class="preview" controls playsinline src="' + escHtml(data.videoUrl) + '"></video><p><a href="' + escHtml(data.videoUrl) + '" target="_blank" rel="noopener">فتح ملف MP4 النهائي</a></p>';
-        return;
-      }
-      if (data.status === 'failed') {
-        if (status) status.textContent = 'فشل الرندر: ' + (data.error || 'خطأ من مزود الفيديو');
-        return;
-      }
-      if (status) status.textContent = 'إنتاج الفيلم جارٍ... الحالة الحالية: ' + data.status + '. سيتم فحص الحالة مرة أخرى تلقائيًا.';
-      window.setTimeout(() => pollFinalVideo(renderId), 8000);
-    } catch (error) {
-      if (status) status.textContent = 'تعذر تحديث حالة الفيديو: ' + error.message + '. أعد المحاولة بعد قليل من زر استكمال متابعة الرندر.';
+  async function imageAll(){
+    for(let i=0;i<scenes.length;i++){
+      status('توليد الصور: '+(i+1)+' / '+scenes.length);
+      await window.generateSceneImage(i);
     }
   }
-  window.resumeFinalVideo = function () {
-    const id = localStorage.getItem('hekaya_render_id');
-    if (id) pollFinalVideo(id);
-    else if (byId('renderStatus')) byId('renderStatus').textContent = 'لا يوجد رندر سابق لاستكمال متابعته.';
-  };
-
-  window.generateAllImages = async function () {
-    const status = byId('productionStatus');
-    if (!pkg?.scenes?.length) { status.textContent = 'أنشئ القصة وخطة المشاهد أولاً.'; return; }
-    for (let i = 0; i < pkg.scenes.length; i++) {
-      const scene = pkg.scenes[i];
-      status.textContent = 'توليد صورة المشهد ' + (i + 1) + ' من ' + pkg.scenes.length + '...';
-      try {
-        const response = await fetch('/api/generate-image', {
-          method: 'POST', headers: {'content-type':'application/json'},
-          body: JSON.stringify({prompt: scene.imagePrompt})
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'فشل توليد الصورة');
-        scene.imageUrl = data.imageUrl;
-        const target = byId('scene-image-' + i);
-        if (target) target.innerHTML = '<img class="preview" src="' + escHtml(data.imageUrl) + '" alt="مشهد ' + (i + 1) + '">';
-        const projectId = localStorage.getItem('hekaya_project_id');
-        if (projectId && data.imageUrl && !data.imageUrl.startsWith('data:')) {
-          await fetch('/api/scenes', {
-            method: 'POST', headers: {'content-type':'application/json'},
-            body: JSON.stringify({
-              id: projectId + '-scene-' + i, projectId, position: i,
-              text: [scene.narration, scene.dialogue].filter(Boolean).join('\n'),
-              imagePrompt: scene.imagePrompt, videoPrompt: scene.videoPrompt,
-              imageUrl: data.imageUrl, status: 'image-ready'
-            })
-          });
-        }
-      } catch (error) {
-        scene.imageError = error.message;
-        const target = byId('scene-image-' + i);
-        if (target) target.textContent = 'فشل التوليد: ' + error.message;
+  async function renderFinal(){
+    status('إرسال المشاهد لمحرك الفيديو والصوت...');
+    const result=await api('/api/render-final-video',{projectId,aspectRatio:$('ratio').value,productionPackage:packageData});
+    renderId=result.renderId;
+    $('finalResult').classList.remove('hidden');
+    $('finalResult').innerHTML='<h2>الفيديو النهائي قيد الإنتاج</h2><p class="mono">Render ID: '+esc(renderId)+'</p><div id="renderStatus" class="progress">في انتظار محرك الفيديو...</div>';
+    localSave();
+    for(let i=0;i<80;i++){
+      await new Promise(resolve=>setTimeout(resolve,5000));
+      const state=await api('/api/final-video-status?id='+encodeURIComponent(renderId),null,'GET');
+      $('renderStatus').textContent='الحالة: '+state.status;
+      if(state.status==='done'&&state.videoUrl){
+        $('finalResult').innerHTML='<h2>🎞️ الفيديو النهائي</h2><video controls playsinline src="'+esc(state.videoUrl)+'" style="width:100%;max-height:600px"></video><p><a href="'+esc(state.videoUrl)+'" target="_blank" rel="noopener">فتح/تنزيل الفيديو النهائي</a></p>';
+        const all=JSON.parse(localStorage.getItem(storageKey)||'[]');const item=all.find(x=>x.id===projectId);if(item){item.finalVideo=state.videoUrl;localStorage.setItem(storageKey,JSON.stringify(all));}
+        status('اكتمل رندر الفيديو النهائي.');await refreshLibrary();return;
       }
-      localStorage.setItem('hekaya_production_package', JSON.stringify(pkg));
+      if(state.status==='failed'){throw new Error(state.error||'فشل رندر الفيديو');}
     }
-    status.textContent = 'اكتملت محاولة توليد الصور لكل المشاهد. راجع نتيجة كل مشهد وأي خطأ ظاهر.';
+    status('الرندر ما زال جاريًا. يمكنك تحديث المكتبة لاحقًا. Render ID: '+renderId);
+  }
+  window.startProduction=async()=>{
+    $('startBtn').disabled=true;
+    try{await makeStory();await imageAll();await renderFinal();}
+    catch(e){status('توقف الإنتاج: '+e.message);}
+    finally{$('startBtn').disabled=false;}
   };
-
-  try {
-    localStorage.removeItem('hekaya_api_settings');
-    const saved = JSON.parse(localStorage.getItem('hekaya_production_package') || 'null');
-    if (saved?.scenes) {
-      pkg = saved;
-      if (byId('productionBrief')) byId('productionBrief').textContent = 'تم استرجاع مخطط إنتاج محفوظ من هذا المتصفح.';
-      renderScenes();
+  window.refreshLibrary=async()=>{
+    $('libraryStatus').textContent='جارٍ تحميل المكتبة...';
+    const root=$('libraryAssets');
+    let list=[];
+    try{
+      const data=await api('/api/library',null,'GET');
+      list=(data.assets||[]);
+      $('libraryStatus').textContent=list.length+' ملف/عنصر محفوظ في قاعدة البيانات.';
+    }catch(e){
+      list=JSON.parse(localStorage.getItem(storageKey)||'[]').flatMap(p=>[
+        ...p.scenes.map((s,i)=>({title:p.title+' — المشهد '+(i+1),type:'image',url:s.imageUrl,project:p.title})).filter(x=>x.url),
+        ...(p.finalVideo?[{title:p.title+' — الفيديو النهائي',type:'video',url:p.finalVideo,project:p.title}]:[])
+      ]);
+      $('libraryStatus').textContent='تعذر قراءة قاعدة البيانات ('+e.message+'). تعرض المكتبة الملفات الموجودة محليًا على هذا الجهاز.';
     }
-    if (localStorage.getItem('hekaya_render_id') && byId('renderStatus')) {
-      byId('renderStatus').innerHTML = 'يوجد رندر محفوظ. <button onclick="resumeFinalVideo()">استكمال متابعة الفيديو</button>';
-      if (localStorage.getItem('hekaya_final_video_url') && byId('videoOutput')) {
-        const url = localStorage.getItem('hekaya_final_video_url');
-        byId('videoOutput').innerHTML = '<video class="preview" controls playsinline src="' + escHtml(url) + '"></video><p><a href="' + escHtml(url) + '" target="_blank" rel="noopener">فتح ملف MP4 النهائي</a></p>';
-      }
-    }
-  } catch {}
-  window.refreshProviderStatuses();
+    root.innerHTML=list.map(a=>'<article class="asset"><span class="asset-type">'+esc(a.type||'media')+'</span><h3>'+esc(a.title||'ملف')+'</h3>'+(a.type==='video'?'<video controls src="'+esc(a.url)+'"></video>':a.type==='image'?'<img src="'+esc(a.url)+'" alt="">':'')+'<p class="muted">'+esc(a.project||'')+'</p>'+(a.url?'<a href="'+esc(a.url)+'" target="_blank" rel="noopener">فتح الملف</a>':'')+'</article>').join('')||'<p class="muted">لا توجد ملفات محفوظة حتى الآن.</p>';
+  };
+  window.refreshProviderStatuses=async()=>{
+    const root=$('providerStatusList');root.innerHTML='<div class="progress">جارٍ فحص...</div>';
+    try{
+      const d=await api('/api/provider-status',null,'GET');
+      root.innerHTML=(d.providers||[]).map(p=>'<article class="panel"><div class="row" style="justify-content:space-between"><b>'+esc(p.label)+'</b><span class="asset-type">'+esc(p.state==='ok'?'متصل':p.state==='missing'?'غير مضاف':'مشكلة')+'</span></div><p class="mono muted">'+esc(p.env||'')+'</p><p>'+esc(p.detail||'')+'</p><p class="muted">'+esc([p.model,p.videoModel,p.environment].filter(Boolean).join(' • '))+'</p></article>').join('');
+      $('providerStatusUpdated').textContent='آخر فحص: '+new Date(d.checkedAt).toLocaleString('ar-EG');
+    }catch(e){root.innerHTML='<div class="progress">'+esc(e.message)+'</div>';}
+  };
+  showTab('studio');
 })();
