@@ -1,10 +1,10 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHmac } from 'node:crypto';
 import { verifyStudioPassword } from './_password.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  const secret = process.env.APP_ACCESS_PASSWORD;
+  const secret = process.env.APP_SESSION_SECRET || process.env.APP_ACCESS_PASSWORD;
   if (!secret) return res.status(503).json({ error: 'إعداد كلمة مرور المنصة غير مكتمل على الخادم.' });
 
   const supplied = String(req.body?.password || '');
