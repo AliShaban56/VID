@@ -35,7 +35,7 @@ export default async function handler(req, res) {
     const prompt = String(scene.videoPrompt || scene.imagePrompt || '').trim();
     if (!prompt) return res.status(400).json({ error: 'Scene ' + (i + 1) + ' is missing its video prompt.' });
 
-    const length = clamp(scene.durationSeconds, 4, 30, 8);
+    const length = clamp(scene.durationSeconds, 4, 15, 8);
     const continuity = String(pkg.visualBible || '').trim();
     const fullPrompt = [
       prompt,
