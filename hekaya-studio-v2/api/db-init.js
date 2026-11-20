@@ -8,9 +8,32 @@ function sameOrigin(req) {
   try { return new URL(origin).host === host; } catch { return false; }
 }
 
+function safeConnectionError(error) {
+  const code = String(error?.code || '').toUpperCase();
+  const message = String(error?.message || '');
+  const combined = code + ' ' + message;
+
+  if (/AUTH|TOKEN|UNAUTHORIZED|401|403|FORBIDDEN|NOT_AUTHORIZED/.test(combined)) {
+    return 'Turso رفض رمز الدخول. أنشئ Auth Token جديدًا بصلاحية قراءة وكتابة، ثم جرّب مرة أخرى.';
+  }
+  if (/URL_SCHEME|URL_INVALID|INVALID_URL|SCHEME|MALFORMED_URL/.test(combined)) {
+    return 'رابط قاعدة البيانات غير مقبول. انسخ Database URL من Turso كما هو، ويجب أن يبدأ بـ libsql://.';
+  }
+  if (/ENOTFOUND|ECONN|TIMEOUT|FETCH_FAILED|NETWORK|TLS|CERTIFICATE/.test(combined)) {
+    return 'تعذر الوصول إلى خادم Turso. راجع الرابط واتصال الإنترنت وحاول مرة أخرى.';
+  }
+  if (/PERMISSION|READ_ONLY|SQLITE_AUTH/.test(combined)) {
+    return 'الرمز متصل لكنه لا يملك صلاحية الكتابة. أنشئ Auth Token بصلاحية قراءة وكتابة.';
+  }
+  if (/COOKIE|أكبر من الحد الآمن/.test(combined)) {
+    return 'بيانات الاتصال أطول من الحد المسموح لحفظها بأمان في المتصفح.';
+  }
+  return 'لم يكتمل الاتصال بقاعدة Turso. راجع Database URL وAuth Token وتأكد من أن الرمز لم تنتهِ صلاحيته.';
+}
+
 function validateConnection(urlValue, tokenValue) {
-  const url = String(urlValue || '').trim();
-  const authToken = String(tokenValue || '').trim();
+  const url = String(urlValue || '').trim().replace(/^["']|["']$/g, '').replace(/\/+$/, '');
+  const authToken = String(tokenValue || '').trim().replace(/^Bearer\s+/i, '').replace(/^["']|["']$/g, '');
   if (!url || url.length > 500 || authToken.length < 20 || authToken.length > 3000) {
     throw new Error('أدخل Database URL وAuth Token صالحين.');
   }
@@ -52,12 +75,7 @@ export default async function handler(req, res) {
         message: 'تم اختبار الاتصال بنجاح وإنشاء جداول حكاية.'
       });
     } catch (error) {
-      const message = error?.message || '';
-      const safeMessage = message.includes('أكبر من الحد الآمن') || message.includes('أدخل') ||
-        message.includes('رابط') || message.includes('استخدم')
-        ? message
-        : 'فشل الاتصال بقاعدة البيانات. تأكد من Database URL وAuth Token وصلاحياتهما.';
-      return res.status(400).json({ error: safeMessage });
+      return res.status(400).json({ error: safeConnectionError(error) });
     }
   }
 
