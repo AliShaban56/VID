@@ -1,11 +1,8 @@
-import { requireAccess } from './_auth.js';
 import { init } from './_db.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-  if (!requireAccess(req, res)) return;
-
   const key = process.env.SHOTSTACK_API_KEY;
   if (!key) return res.status(503).json({ error: 'SHOTSTACK_API_KEY is not configured.' });
   const id = String(req.query?.id || '');
