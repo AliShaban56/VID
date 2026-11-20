@@ -1,6 +1,6 @@
 import { db } from './_db.js';
 import { requireAccess } from './_auth.js';
-import { handleMagicHourKeys } from './_magichour.js';
+import { handleMagicHourKeys, magicHourRequest, magicHourKeysConfigured } from './_magichour.js';
 
 let lastSnapshot = null;
 let lastCheckedAt = 0;
@@ -42,27 +42,28 @@ async function probe(url, headers, label) {
 async function collectStatus() {
   const aiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
   const aiBase = (process.env.AI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, '');
-  const imageKey = process.env.IMAGE_API_KEY || aiKey;
-  const imageBase = (process.env.IMAGE_API_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, '');
   const shotstackKey = process.env.SHOTSTACK_API_KEY;
   const shotstackEnv = process.env.SHOTSTACK_ENV === 'v1' ? 'v1' : 'stage';
   const tursoUrl = process.env.TURSO_DATABASE_URL;
   const tursoToken = process.env.TURSO_AUTH_TOKEN;
 
+  const magicHourPromise = (async () => {
+    try {
+      if (!await magicHourKeysConfigured()) return { state: 'missing', detail: 'أضف مفتاح Magic Hour في الخزنة أو متغيرات Vercel.' };
+      await magicHourRequest('/v1/voices', undefined, 'GET');
+      return { state: 'ok', detail: 'Magic Hour قبل المفتاح؛ جاهز لطلبات الصور والفيديو والصوت.' };
+    } catch (error) {
+      return { state: 'error', detail: error?.message || 'تعذر الاتصال بـ Magic Hour.' };
+    }
+  })();
+
   const aiPromise = aiKey
     ? probe(aiBase + '/v1/models', { Authorization: 'Bearer ' + aiKey, Accept: 'application/json' }, 'محرك كتابة القصص')
     : Promise.resolve({ state: 'missing', detail: 'لم تتم إضافة مفتاح كتابة القصص بعد.' });
 
-  const imageUsesAi = Boolean(imageKey && imageKey === aiKey && imageBase === aiBase);
-  const imagePromise = !imageKey
-    ? Promise.resolve({ state: 'missing', detail: 'لم تتم إضافة مفتاح الصور بعد.' })
-    : imageUsesAi
-      ? aiPromise
-      : probe(imageBase + '/v1/models', { Authorization: 'Bearer ' + imageKey, Accept: 'application/json' }, 'محرك الصور');
-
   const shotstackPromise = shotstackKey
     ? probe('https://api.shotstack.io/edit/' + shotstackEnv + '/models', { 'x-api-key': shotstackKey, Accept: 'application/json' }, 'Shotstack')
-    : Promise.resolve({ state: 'missing', detail: 'لم تتم إضافة مفتاح Shotstack بعد.' });
+    : Promise.resolve({ state: 'missing', detail: 'يلزم Shotstack لتجميع ملفات الوسائط في MP4 نهائي.' });
 
   const databasePromise = !tursoUrl && !tursoToken
     ? Promise.resolve({ state: 'missing', detail: 'قاعدة Turso غير مربوطة بعد.' })
@@ -78,21 +79,21 @@ async function collectStatus() {
           }
         })();
 
-  const [ai, image, shotstack, database] = await Promise.all([
-    aiPromise, imagePromise, shotstackPromise, databasePromise
+  const [ai, magicHour, shotstack, database] = await Promise.all([
+    aiPromise, magicHourPromise, shotstackPromise, databasePromise
   ]);
 
-  const sharedNote = imageUsesAi ? 'يستخدم نفس مفتاح محرك القصص.' : 'مفتاح مستقل للصور.';
   return {
     checkedAt: new Date().toISOString(),
     providers: [
       result('story', 'محرك كتابة القصص', 'AI_API_KEY أو OPENAI_API_KEY', ai.state, ai.detail, { model: process.env.AI_TEXT_MODEL || 'gpt-4o-mini' }),
-      result('image', 'محرك توليد الصور', imageUsesAi ? 'AI_API_KEY (مشترك)' : 'IMAGE_API_KEY', image.state, image.detail, { model: process.env.IMAGE_MODEL || 'gpt-image-1', note: sharedNote }),
-      result('video', 'الفيديو والصوت والموسيقى', 'SHOTSTACK_API_KEY', shotstack.state, shotstack.detail, {
+      result('magichour', 'Magic Hour — الصور والفيديو والصوت والموسيقى', 'MAGICHOUR_API_KEY / الخزنة المشفرة', magicHour.state, magicHour.detail, {
+        model: process.env.MAGICHOUR_IMAGE_MODEL || 'z-image-turbo',
+        videoModel: process.env.MAGICHOUR_VIDEO_MODEL || 'ltx-2.5'
+      }),
+      result('assembly', 'تجميع MP4 النهائي', 'SHOTSTACK_API_KEY', shotstack.state, shotstack.detail, {
         environment: shotstackEnv === 'stage' ? 'تجريبي Stage' : 'إنتاج V1',
-        videoModel: process.env.SHOTSTACK_VIDEO_MODEL || 'seedance-2.0-text-to-video',
-        speechModel: process.env.SHOTSTACK_TTS_MODEL || 'elevenlabs-multilingual-v2',
-        musicModel: process.env.SHOTSTACK_MUSIC_MODEL || 'elevenlabs-music'
+        model: 'تركيب فقط — لا يولّد وسائط'
       }),
       result('database', 'قاعدة البيانات Turso', 'TURSO_DATABASE_URL + TURSO_AUTH_TOKEN', database.state, database.detail)
     ],
