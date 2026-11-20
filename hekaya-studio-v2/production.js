@@ -37,6 +37,41 @@
       if (message) message.textContent = 'تعذر التحقق من الدخول: ' + error.message;
     }
   }
+  window.changeStudioPassword = async function () {
+    const currentPassword = byId('currentStudioPassword')?.value || '';
+    const newPassword = byId('newStudioPassword')?.value || '';
+    const confirmation = byId('confirmStudioPassword')?.value || '';
+    const message = byId('passwordChangeMessage');
+    if (!currentPassword || !newPassword || !confirmation) {
+      if (message) message.textContent = 'املأ حقول كلمة المرور الثلاثة.';
+      return;
+    }
+    if (newPassword.length < 12) {
+      if (message) message.textContent = 'اختر كلمة مرور من 12 حرفًا على الأقل.';
+      return;
+    }
+    if (newPassword !== confirmation) {
+      if (message) message.textContent = 'تأكيد كلمة المرور غير مطابق.';
+      return;
+    }
+    if (message) message.textContent = 'جارٍ التحقق وحفظ كلمة المرور بشكل آمن...';
+    try {
+      const response = await fetch('/api/change-password', {
+        method: 'POST',
+        headers: {'content-type':'application/json'},
+        body: JSON.stringify({currentPassword, newPassword})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'تعذر تغيير كلمة المرور.');
+      byId('currentStudioPassword').value = '';
+      byId('newStudioPassword').value = '';
+      byId('confirmStudioPassword').value = '';
+      if (message) message.textContent = data.message || 'تم تغيير كلمة المرور بنجاح.';
+    } catch (error) {
+      if (message) message.textContent = error.message;
+    }
+  };
+
   window.createStory = async function () {
     const concept = (byId('story')?.value || '').trim();
     const status = byId('productionStatus');
