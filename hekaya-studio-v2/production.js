@@ -173,6 +173,41 @@
       $('providerStatusUpdated').textContent='آخر فحص: '+new Date(d.checkedAt).toLocaleString('ar-EG');
     }catch(e){root.innerHTML='<div class="progress">'+esc(e.message)+'</div>';}
   };
+  function setDatabaseSetupMessage(message){const root=$('databaseSetupStatus');if(!root)return;root.classList.remove('hidden');root.textContent=message;}
+  window.connectDatabase=async()=>{
+    const url=$('tursoDatabaseUrl')?.value.trim()||'';
+    const token=$('tursoAuthToken')?.value.trim()||'';
+    if(!url||!token){setDatabaseSetupMessage('أدخل Database URL وAuth Token أولًا.');return;}
+    setDatabaseSetupMessage('جارٍ اختبار الاتصال وإنشاء جداول حكاية...');
+    try{
+      const result=await api('/api/db-init',{action:'connect',databaseUrl:url,authToken:token});
+      $('tursoAuthToken').value='';
+      setDatabaseSetupMessage(result.message||'تم ربط قاعدة البيانات بنجاح.');
+      await refreshProviderStatuses();
+      await refreshMagicKeys();
+    }catch(error){setDatabaseSetupMessage(error.message||'تعذر ربط قاعدة البيانات.');}
+  };
+  window.initializeDatabase=async()=>{
+    setDatabaseSetupMessage('جارٍ تهيئة الجداول...');
+    try{
+      const result=await api('/api/db-init',{action:'initialize'});
+      setDatabaseSetupMessage(result.message||'تم تجهيز جداول قاعدة البيانات.');
+      await refreshProviderStatuses();
+    }catch(error){setDatabaseSetupMessage(error.message||'تعذر تهيئة الجداول.');}
+  };
+  window.disconnectDatabase=async()=>{
+    if(!confirm('فصل اتصال قاعدة البيانات المحفوظ لهذا المتصفح؟'))return;
+    setDatabaseSetupMessage('جارٍ فصل الاتصال...');
+    try{
+      const result=await api('/api/db-init',{action:'disconnect'});
+      setDatabaseSetupMessage(result.environmentConfigured
+        ?'تم فصل ربط المتصفح. ما زال اتصال الخادم في Vercel فعالًا.'
+        :'تم فصل اتصال قاعدة البيانات من هذا المتصفح.');
+      await refreshProviderStatuses();
+      await refreshMagicKeys();
+    }catch(error){setDatabaseSetupMessage(error.message||'تعذر فصل الاتصال.');}
+  };
+
   window.refreshMagicKeys=async()=>{const root=$('magicKeysList');if(!root)return;try{const d=await api('/api/provider-status?resource=magichour-keys',null,'GET');root.innerHTML=(d.keys||[]).map(k=>'<div class="row panel"><span>'+esc(k.label)+' — '+esc(k.masked)+'</span><button class="secondary" onclick="removeMagicKey('+k.index+')">حذف</button></div>').join('')||'<p class="muted">لا توجد مفاتيح محفوظة.</p>';}catch(e){root.textContent=e.message;}};
   window.addMagicKey=async()=>{const input=$('magicKeyInput');const key=input.value.trim();if(!key)return alert('أدخل المفتاح أولاً');try{await api('/api/provider-status?resource=magichour-keys',{action:'add',key});input.value='';await refreshMagicKeys();alert('تم حفظ المفتاح مشفرًا');}catch(e){alert(e.message);}};
   window.removeMagicKey=async(index)=>{if(!confirm('حذف هذا المفتاح؟'))return;try{await api('/api/provider-status?resource=magichour-keys',{action:'remove',index});await refreshMagicKeys();}catch(e){alert(e.message);}};
