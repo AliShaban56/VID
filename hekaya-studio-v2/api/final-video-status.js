@@ -14,13 +14,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'بيانات مشروع Magic Hour غير صحيحة.' });
     }
     try {
-      const details = await magicHourRequest('/v1/' + type + '-projects/' + encodeURIComponent(id));
+      const details = await magicHourRequest(req, '/v1/' + type + '-projects/' + encodeURIComponent(id));
       const state = String(details?.status || 'unknown').toLowerCase();
       const mediaUrl = details?.downloads?.[0]?.url || null;
       const error = details?.error?.message || details?.error || null;
       if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
         try {
-          const db = await init();
+          const db = await init(req);
           await db.execute({
             sql: 'UPDATE generation_jobs SET status=?,result_url=?,error=? WHERE id=?',
             args: [state, mediaUrl || '', error ? String(error) : '', id]
