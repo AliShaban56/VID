@@ -3,7 +3,7 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
 
   const apiKey = process.env.IMAGE_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
-  const baseUrl = (process.env.IMAGE_API_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com').replace(/\\/+$/, '');
+    const baseUrl = (process.env.IMAGE_API_BASE_URL || process.env.AI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, '');
   const endpoint = process.env.IMAGE_API_ENDPOINT || (baseUrl + '/v1/images/generations');
   const defaultModel = process.env.IMAGE_MODEL || 'gpt-image-1';
   if (!apiKey) return res.status(503).json({ error: 'Image API is not configured. Add IMAGE_API_KEY or AI_API_KEY in Vercel.' });
