@@ -24,9 +24,9 @@ function decrypt(value) {
   return Buffer.concat([decipher.update(Buffer.from(data, 'base64')), decipher.final()]).toString('utf8');
 }
 
-async function storedKeys() {
-  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN || !encryptionSecret()) return [];
-  const database = await init();
+async function storedKeys(req) {
+  if (!encryptionSecret()) return [];
+  const database = await init(req);
   const row = await database.execute("SELECT value FROM settings WHERE id='magichour_keys'");
   let parsed = [];
   try {
@@ -39,7 +39,7 @@ async function storedKeys() {
   }).filter(Boolean);
 }
 
-async function keys() {
+async function keys(req) {
   const envKeys = [process.env.MAGICHOUR_API_KEYS, process.env.MAGICHOUR_API_KEY]
     .filter(Boolean)
     .flatMap(value => value.split(',').flatMap(part => part.split(';')).flatMap(part => part.split(String.fromCharCode(10))))
@@ -47,18 +47,18 @@ async function keys() {
     .filter(Boolean);
 
   let databaseKeys = [];
-  try { databaseKeys = await storedKeys(); } catch {}
+  try { databaseKeys = await storedKeys(req); } catch {}
   return [...new Set([...envKeys, ...databaseKeys])];
 }
 
-export async function magicHourRequest(path, body, method = 'POST') {
+export async function magicHourRequest(req, path, body, method = 'POST') {
   const segments = typeof path === 'string' ? path.split('/') : [];
   if (segments.length < 3 || segments[0] !== '' || segments[1] !== 'v1' ||
       segments.slice(2).some(part => !part || !/^[a-zA-Z0-9_-]+$/.test(part))) {
     throw new Error('Invalid Magic Hour API path.');
   }
 
-  const apiKeys = await keys();
+  const apiKeys = await keys(req);
   if (!apiKeys.length) throw new Error('أضف مفتاح Magic Hour في خزنة المحركات أولًا.');
 
   let lastError;
@@ -98,8 +98,8 @@ export async function magicHourRequest(path, body, method = 'POST') {
   throw lastError || new Error('فشل طلب Magic Hour.');
 }
 
-export async function magicHourKeysConfigured() {
-  return (await keys()).length > 0;
+export async function magicHourKeysConfigured(req) {
+  return (await keys(req)).length > 0;
 }
 
 export async function handleMagicHourKeys(req, res) {
@@ -107,10 +107,6 @@ export async function handleMagicHourKeys(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   if (!['GET', 'POST'].includes(req.method)) return res.status(405).json({ error: 'Method not allowed' });
   if (!encryptionSecret()) return res.status(503).json({ error: 'أضف HEKAYA_SECRET_ENCRYPTION_KEY إلى Vercel أولًا.' });
-  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
-    return res.status(503).json({ error: 'خزنة المفاتيح تحتاج تفعيل قاعدة Turso: TURSO_DATABASE_URL وTURSO_AUTH_TOKEN.' });
-  }
-
   const origin = req.headers?.origin;
   const host = req.headers?.host;
   if (req.method === 'POST' && origin && host) {
@@ -122,7 +118,7 @@ export async function handleMagicHourKeys(req, res) {
   }
 
   try {
-    const database = await init();
+    const database = await init(req);
     const row = await database.execute("SELECT value FROM settings WHERE id='magichour_keys'");
     const encrypted = JSON.parse(row.rows?.[0]?.value || '[]');
     const values = encrypted.map(decrypt);
