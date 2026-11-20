@@ -57,10 +57,30 @@
   window.generateOnlyStory=async()=>{try{await makeStory();}catch(e){status(e.message);}};
   window.generateSceneImage=async(index)=>{
     const s=scenes[index];if(!s)return;
-    status('جارٍ توليد صورة المشهد '+(index+1)+'...');
-    const out=await api('/api/generate-image',{prompt:s.imagePrompt,model:undefined,size:'1024x1024',quality:'high'});
-    s.imageUrl=out.imageUrl||out.url;images[index]=s.imageUrl;renderScenes();await saveProjectAndScenes();
-    status('تم توليد صورة المشهد '+(index+1));return s.imageUrl;
+    status('إرسال صورة المشهد '+(index+1)+' إلى Magic Hour...');
+    const out=await api('/api/generate-image',{
+      prompt:s.imagePrompt,
+      aspectRatio:$('ratio').value,
+      projectId,
+      sceneId:s.id||('scene-'+(index+1)),
+      name:(packageData?.title||'حكاية')+' — المشهد '+(index+1)
+    });
+    let imageUrl=out.imageUrl||out.url||'';
+    if(out.provider==='magichour'&&out.projectId){
+      let ready=false;
+      for(let attempt=0;attempt<80;attempt++){
+        await new Promise(resolve=>setTimeout(resolve,3000));
+        const state=await api('/api/final-video-status?provider=magichour&type=image&id='+encodeURIComponent(out.projectId),null,'GET');
+        status('صورة المشهد '+(index+1)+': '+state.status);
+        if(state.status==='complete'&&state.mediaUrl){imageUrl=state.mediaUrl;ready=true;break;}
+        if(state.status==='error'||state.status==='canceled')throw new Error(state.error||'فشل توليد الصورة في Magic Hour.');
+      }
+      if(!ready)throw new Error('توليد الصورة ما زال جاريًا؛ أعد المحاولة بعد قليل.');
+    }
+    if(!imageUrl)throw new Error('لم يرجع مزود الصور رابط الصورة.');
+    s.imageUrl=imageUrl;images[index]=imageUrl;renderScenes();await saveProjectAndScenes();
+    status('تم توليد صورة المشهد '+(index+1)+' عبر Magic Hour');
+    return imageUrl;
   };
   async function imageAll(){
     for(let i=0;i<scenes.length;i++){
@@ -69,11 +89,45 @@
     }
   }
   async function renderFinal(){
-    status('إرسال المشاهد لمحرك الفيديو والصوت...');
+    status('إرسال المشاهد إلى Magic Hour لتوليد الفيديو والتعليق الصوتي والموسيقى...');
     const result=await api('/api/render-final-video',{projectId,aspectRatio:$('ratio').value,productionPackage:packageData});
-    renderId=result.renderId;
+    let renderId=result.renderId;
+    if(result.provider==='magichour'){
+      const jobs=result.projects||[];
+      if(!jobs.length)throw new Error('لم يتم إنشاء أي مهمة وسائط في Magic Hour.');
+      const completed=new Map();
+      for(let attempt=0;attempt<120;attempt++){
+        const states=await Promise.all(jobs.map(async job=>{
+          try{return await api('/api/final-video-status?provider=magichour&type='+encodeURIComponent(job.type)+'&id='+encodeURIComponent(job.id),null,'GET');}
+          catch(e){return {projectId:job.id,status:'retry',error:e.message};}
+        }));
+        let failed=null;
+        states.forEach((state,index)=>{
+          const job=jobs[index];
+          if(state.status==='complete'&&state.mediaUrl)completed.set(job.id,{...job,url:state.mediaUrl});
+          if(state.status==='error'||state.status==='canceled')failed=state.error||('فشلت مهمة '+job.id);
+        });
+        const finished=jobs.every(job=>completed.has(job.id));
+        status('Magic Hour: اكتمل '+completed.size+' من '+jobs.length+' مهمة وسائط...');
+        if(failed)throw new Error(failed);
+        if(finished)break;
+        await new Promise(resolve=>setTimeout(resolve,5000));
+      }
+      if(completed.size!==jobs.length)throw new Error('بعض عمليات Magic Hour لم تكتمل بعد؛ أعد فتح المشروع وتابع حالات المهام.');
+      const ready=jobs.map(job=>completed.get(job.id));
+      const videos=ready.filter(job=>job.type==='video').map(job=>({sceneIndex:job.sceneIndex,durationSeconds:job.durationSeconds,url:job.url}));
+      const voices=ready.filter(job=>job.type==='audio'&&job.audioRole==='voice').map(job=>({sceneIndex:job.sceneIndex,start:job.start,url:job.url}));
+      const music=ready.find(job=>job.type==='audio'&&job.audioRole==='music');
+      status('اكتمل التوليد في Magic Hour؛ جارٍ تجميع المشاهد في ملف MP4...');
+      const assembled=await api('/api/render-final-video',{
+        action:'assemble',projectId,aspectRatio:$('ratio').value,
+        assets:{videos,voices,music:music?{url:music.url}:null}
+      });
+      renderId=assembled.renderId;
+    }
+    if(!renderId)throw new Error('لم يرجع محرك التجميع معرّف الرندر النهائي.');
     $('finalResult').classList.remove('hidden');
-    $('finalResult').innerHTML='<h2>الفيديو النهائي قيد الإنتاج</h2><p class="mono">Render ID: '+esc(renderId)+'</p><div id="renderStatus" class="progress">في انتظار محرك الفيديو...</div>';
+    $('finalResult').innerHTML='<h2>الفيديو النهائي قيد الإنتاج</h2><p class="mono">Render ID: '+esc(renderId)+'</p><div id="renderStatus" class="progress">في انتظار اكتمال تركيب الفيديو...</div>';
     localSave();
     for(let i=0;i<80;i++){
       await new Promise(resolve=>setTimeout(resolve,5000));
@@ -84,9 +138,9 @@
         const all=JSON.parse(localStorage.getItem(storageKey)||'[]');const item=all.find(x=>x.id===projectId);if(item){item.finalVideo=state.videoUrl;localStorage.setItem(storageKey,JSON.stringify(all));}
         status('اكتمل رندر الفيديو النهائي.');await refreshLibrary();return;
       }
-      if(state.status==='failed'){throw new Error(state.error||'فشل رندر الفيديو');}
+      if(state.status==='failed'){throw new Error(state.error||'فشل تركيب الفيديو النهائي');}
     }
-    status('الرندر ما زال جاريًا. يمكنك تحديث المكتبة لاحقًا. Render ID: '+renderId);
+    status('الفيديو ما زال قيد التركيب. يمكنك تحديث المكتبة لاحقًا. Render ID: '+renderId);
   }
   window.startProduction=async()=>{
     $('startBtn').disabled=true;
