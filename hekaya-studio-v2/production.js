@@ -83,6 +83,65 @@
     } catch (error) { msg.textContent = error.message; }
   };
 
+
+  window.renderFinalVideo = async function () {
+    if (!pkg?.scenes?.length) {
+      const status = byId('renderStatus'); if (status) status.textContent = 'أنشئ القصة وخطة المشاهد أولاً.';
+      return;
+    }
+    const status = byId('renderStatus'), output = byId('videoOutput');
+    status.textContent = 'إرسال أوامر كل المشاهد إلى محرك الفيديو والصوت والموسيقى...';
+    if (output) output.innerHTML = '';
+    try {
+      const response = await fetch('/api/render-final-video', {
+        method: 'POST', headers: {'content-type':'application/json'},
+        body: JSON.stringify({
+          productionPackage: pkg,
+          projectId: localStorage.getItem('hekaya_project_id'),
+          aspectRatio: byId('videoAspectRatio')?.value || '16:9',
+          videoModel: byId('videoModel')?.value || undefined
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'تعذر بدء إنتاج الفيديو');
+      localStorage.setItem('hekaya_render_id', data.renderId);
+      localStorage.setItem('hekaya_render_version', data.version);
+      status.textContent = 'تم إرسال المشروع إلى Shotstack. حالة الرندر: ' + data.status + '. المدة المخططة: ' + data.estimatedDurationSeconds + ' ثانية. أتابع تجهيز ملف MP4...';
+      pollFinalVideo(data.renderId);
+    } catch (error) {
+      status.textContent = 'تعذر بدء الفيديو النهائي: ' + error.message;
+    }
+  };
+
+  async function pollFinalVideo(renderId) {
+    const status = byId('renderStatus');
+    try {
+      const response = await fetch('/api/final-video-status?id=' + encodeURIComponent(renderId));
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'تعذر قراءة حالة الفيديو');
+      if (data.status === 'done' && data.videoUrl) {
+        localStorage.setItem('hekaya_final_video_url', data.videoUrl);
+        if (status) status.textContent = 'اكتمل إنتاج الفيلم النهائي. ملف MP4 جاهز للمشاهدة.';
+        const output = byId('videoOutput');
+        if (output) output.innerHTML = '<video class="preview" controls playsinline src="' + escHtml(data.videoUrl) + '"></video><p><a href="' + escHtml(data.videoUrl) + '" target="_blank" rel="noopener">فتح ملف MP4 النهائي</a></p>';
+        return;
+      }
+      if (data.status === 'failed') {
+        if (status) status.textContent = 'فشل الرندر: ' + (data.error || 'خطأ من مزود الفيديو');
+        return;
+      }
+      if (status) status.textContent = 'إنتاج الفيلم جارٍ... الحالة الحالية: ' + data.status + '. سيتم فحص الحالة مرة أخرى تلقائيًا.';
+      window.setTimeout(() => pollFinalVideo(renderId), 8000);
+    } catch (error) {
+      if (status) status.textContent = 'تعذر تحديث حالة الفيديو: ' + error.message + '. أعد المحاولة بعد قليل من زر استكمال متابعة الرندر.';
+    }
+  }
+  window.resumeFinalVideo = function () {
+    const id = localStorage.getItem('hekaya_render_id');
+    if (id) pollFinalVideo(id);
+    else if (byId('renderStatus')) byId('renderStatus').textContent = 'لا يوجد رندر سابق لاستكمال متابعته.';
+  };
+
   window.generateAllImages = async function () {
     const status = byId('productionStatus');
     if (!pkg?.scenes?.length) { status.textContent = 'أنشئ القصة وخطة المشاهد أولاً.'; return; }
@@ -128,6 +187,13 @@
       pkg = saved;
       if (byId('productionBrief')) byId('productionBrief').textContent = 'تم استرجاع مخطط إنتاج محفوظ من هذا المتصفح.';
       renderScenes();
+    }
+    if (localStorage.getItem('hekaya_render_id') && byId('renderStatus')) {
+      byId('renderStatus').innerHTML = 'يوجد رندر محفوظ. <button onclick="resumeFinalVideo()">استكمال متابعة الفيديو</button>';
+      if (localStorage.getItem('hekaya_final_video_url') && byId('videoOutput')) {
+        const url = localStorage.getItem('hekaya_final_video_url');
+        byId('videoOutput').innerHTML = '<video class="preview" controls playsinline src="' + escHtml(url) + '"></video><p><a href="' + escHtml(url) + '" target="_blank" rel="noopener">فتح ملف MP4 النهائي</a></p>';
+      }
     }
   } catch {}
 })();
