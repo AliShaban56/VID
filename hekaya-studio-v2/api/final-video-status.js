@@ -18,15 +18,13 @@ export default async function handler(req, res) {
       const state = String(details?.status || 'unknown').toLowerCase();
       const mediaUrl = details?.downloads?.[0]?.url || null;
       const error = details?.error?.message || details?.error || null;
-      if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
-        try {
+      try {
           const db = await init(req);
           await db.execute({
             sql: 'UPDATE generation_jobs SET status=?,result_url=?,error=? WHERE id=?',
             args: [state, mediaUrl || '', error ? String(error) : '', id]
           });
         } catch {}
-      }
       return res.status(200).json({ provider: 'magichour', projectId: id, type, status: state, mediaUrl, downloads: details?.downloads || [], error });
     } catch (error) {
       return res.status(502).json({ error: error.message || 'تعذر جلب حالة مشروع Magic Hour.' });
@@ -51,7 +49,7 @@ export default async function handler(req, res) {
     const videoUrl = state === 'done' ? (result?.url || null) : null;
     const error = state === 'failed' ? (result?.error || 'فشل تركيب الفيديو.') : null;
     try {
-      const db = await init();
+      const db = await init(req);
       await db.execute({
         sql: 'UPDATE generation_jobs SET status=?,result_url=?,error=? WHERE id=?',
         args: [state, videoUrl || '', error || '', id]
