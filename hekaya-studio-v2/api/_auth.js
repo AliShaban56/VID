@@ -11,7 +11,7 @@ function safeEqual(a, b) {
 }
 
 export function hasAccess(req) {
-  const secret = process.env.APP_ACCESS_PASSWORD;
+  const secret = process.env.APP_SESSION_SECRET || process.env.APP_ACCESS_PASSWORD;
   if (!secret) return false;
   const raw = String(req.headers?.cookie || '');
   const item = raw.split(';').map(v => v.trim()).find(v => v.startsWith('hekaya_access='));
