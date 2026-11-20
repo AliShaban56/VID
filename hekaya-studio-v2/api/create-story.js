@@ -1,3 +1,4 @@
+import { requireAccess } from './_auth.js';
 import { init } from './_db.js';
 
 function parseJson(value) {
@@ -16,6 +17,7 @@ function text(value, fallback = '') {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (!requireAccess(req, res)) return;
 
   const apiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
   const baseUrl = (process.env.AI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, '');
