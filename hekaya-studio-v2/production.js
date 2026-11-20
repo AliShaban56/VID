@@ -163,7 +163,7 @@
       ]);
       $('libraryStatus').textContent='تعذر قراءة قاعدة البيانات ('+e.message+'). تعرض المكتبة الملفات الموجودة محليًا على هذا الجهاز.';
     }
-    root.innerHTML=list.map(a=>'<article class="asset"><span class="asset-type">'+esc(a.type||'media')+'</span><h3>'+esc(a.title||'ملف')+'</h3>'+(a.type==='video'?'<video controls src="'+esc(a.url)+'"></video>':a.type==='image'?'<img src="'+esc(a.url)+'" alt="">':'')+'<p class="muted">'+esc(a.project||'')+'</p>'+(a.excerpt?'<p>'+esc(a.excerpt)+'</p>':'')+(a.url?'<a href="'+esc(a.url)+'" target="_blank" rel="noopener">فتح الملف</a>':'')+'</article>').join('')||'<p class="muted">لا توجد ملفات محفوظة حتى الآن.</p>';
+    root.innerHTML=list.map(a=>'<article class="asset"><span class="asset-type">'+esc(a.type||'media')+'</span><h3>'+esc(a.title||'ملف')+'</h3>'+(a.type==='video'?'<video controls src="'+esc(a.url)+'"></video>':a.type==='audio'?'<audio controls src="'+esc(a.url)+'" style="width:100%"></audio>':a.type==='image'?'<img src="'+esc(a.url)+'" alt="">':'')+'<p class="muted">'+esc(a.project||'')+'</p>'+(a.excerpt?'<p>'+esc(a.excerpt)+'</p>':'')+(a.url?'<a href="'+esc(a.url)+'" target="_blank" rel="noopener">فتح الملف</a>':'')+'</article>').join('')||'<p class="muted">لا توجد ملفات محفوظة حتى الآن.</p>';
   };
   window.refreshProviderStatuses=async()=>{
     const root=$('providerStatusList');root.innerHTML='<div class="progress">جارٍ فحص...</div>';
