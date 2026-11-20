@@ -60,7 +60,7 @@ export default async function handler(req, res) {
       transition: { in: i === 0 ? 'fade' : 'fade', out: 'fade' }
     });
 
-    const spokenText = String(scene.narration || scene.dialogue || '').trim();
+    const spokenText = [scene.narration, scene.dialogue].map(value => String(value || '').trim()).filter(Boolean).join('\n');
     if (spokenText) {
       const audioAsset = {
         type: 'audio',
