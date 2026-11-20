@@ -1,4 +1,6 @@
+import { requireAccess } from './_auth.js';
 export default async function handler(req, res) {
+  if (!requireAccess(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
   res.setHeader('Cache-Control', 'no-store');
 
