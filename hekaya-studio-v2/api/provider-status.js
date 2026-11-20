@@ -1,4 +1,6 @@
 import { db } from './_db.js';
+import { requireAccess } from './_auth.js';
+import { handleMagicHourKeys } from './_magichour.js';
 
 let lastSnapshot = null;
 let lastCheckedAt = 0;
@@ -100,6 +102,8 @@ async function collectStatus() {
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
+  if (!requireAccess(req, res)) return;
+  if (req.query?.resource === 'magichour-keys') return handleMagicHourKeys(req, res);
   res.setHeader('X-Content-Type-Options', 'nosniff');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
