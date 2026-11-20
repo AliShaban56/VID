@@ -123,7 +123,7 @@ export default async function handler(req, res) {
         'Cinematic storytelling shot. Keep character appearance, clothing, props and environment consistent. No captions, logos, or watermarks.'
       ].filter(Boolean).join('\n');
       if (!visualPrompt.trim()) return res.status(400).json({ error: 'المشهد ' + (index + 1) + ' لا يحتوي على وصف بصري.' });
-      const video = await magicHourRequest('/v1/text-to-video', {
+      const video = await magicHourRequest(req, '/v1/text-to-video', {
         name: safeText(pkg.title || 'Hekaya', 80) + ' scene ' + (index + 1),
         end_seconds: duration,
         style: { prompt: visualPrompt.slice(0, 3900) },
@@ -138,7 +138,7 @@ export default async function handler(req, res) {
 
       const spoken = [scene.narration, scene.dialogue].map(value => safeText(value, 5000)).filter(Boolean).join('\n');
       if (spoken && voiceId) {
-        const voice = await magicHourRequest('/v1/ai-voice-generator', {
+        const voice = await magicHourRequest(req, '/v1/ai-voice-generator', {
           name: safeText(pkg.title || 'Hekaya', 80) + ' voice ' + (index + 1),
           style: { prompt: spoken.slice(0, 5000), voice_name: voiceId, language: 'arabic', speed: 1 }
         });
@@ -151,7 +151,7 @@ export default async function handler(req, res) {
     }
 
     const soundtrack = safeText(pkg.soundtrackDirection || 'Instrumental cinematic score, warm emotional arc, subtle oud and strings, no vocals', 1800);
-    const music = await magicHourRequest('/v1/ai-music-generator', {
+    const music = await magicHourRequest(req, '/v1/ai-music-generator', {
       name: safeText(pkg.title || 'Hekaya', 80) + ' soundtrack',
       duration: clamp(timelineStart, 15, 300, 60),
       style: { prompt: soundtrack, instrumental: true }
