@@ -16,8 +16,16 @@ main{max-width:1280px;margin:24px auto;padding:0 18px}.tabs{display:flex;gap:8px
 </style>
 </head>
 <body>
-<header><div><div class="logo">حكاية</div><div class="sub">استوديو القصص إلى الفيديو النهائي</div></div><div class="row"><button class="secondary" id="themeToggle" onclick="toggleTheme()">◐ تبديل النمط</button></div></header>
-<main>
+<section id="loginGate" class="panel" style="max-width:440px;margin:12vh auto;padding:28px">
+  <h1>دخول استوديو حكاية</h1>
+  <p class="muted">المنصة خاصة. سجّل الدخول بكلمة المرور التي تم ضبطها في إعدادات Vercel.</p>
+  <label for="loginPassword">كلمة المرور</label>
+  <input id="loginPassword" type="password" autocomplete="current-password" placeholder="كلمة مرور المنصة" onkeydown="if(event.key==='Enter')loginToStudio()">
+  <button style="width:100%;margin-top:14px" onclick="loginToStudio()">دخول آمن</button>
+  <p id="loginMessage" class="muted" role="status" style="margin-top:14px">جارٍ التحقق من إعدادات الحماية...</p>
+</section>
+<header id="appHeader" class="hidden"><div><div class="logo">حكاية</div><div class="sub">استوديو القصص إلى الفيديو النهائي</div></div><div class="row"><button class="secondary" id="themeToggle" onclick="toggleTheme()">◐ تبديل النمط</button></div></header>
+<main id="appMain" class="hidden">
 <nav class="tabs"><button class="tab active" id="tabStudio" onclick="showTab('studio')">استوديو الإنشاء</button><button class="tab" id="tabLibrary" onclick="showTab('library')">المكتبة</button><button class="tab" id="tabProviders" onclick="showTab('providers')">المحركات والاتصال</button></nav>
 <section id="studio">
 <div class="panel"><h1>اصنع قصة وفيديو من فكرة واحدة</h1><p class="muted">اكتب فكرتك؛ حكاية تتولى السيناريو وتقسيم المشاهد وأوامر الصور والحركة ثم إنشاء الصور وتجهيز الفيديو النهائي.</p>
