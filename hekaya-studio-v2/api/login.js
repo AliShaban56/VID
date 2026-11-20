@@ -9,7 +9,7 @@ export default async function handler(req, res) {
 
   const supplied = String(req.body?.password || '');
   try {
-    if (!await verifyStudioPassword(supplied)) {
+    if (!await verifyStudioPassword(supplied, req)) {
       return res.status(401).json({ error: 'كلمة المرور غير صحيحة.' });
     }
   } catch (error) {
