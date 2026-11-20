@@ -1,5 +1,7 @@
+import { requireAccess } from './_auth.js';
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
+  if (!requireAccess(req, res)) return;
   res.setHeader('Cache-Control', 'no-store');
 
   const apiKey = process.env.IMAGE_API_KEY || process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
