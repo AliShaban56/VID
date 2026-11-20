@@ -1,10 +1,6 @@
-import { db } from './_db.js';
+import { db, databaseConfig } from './_db.js';
 import { requireAccess } from './_auth.js';
 import { handleMagicHourKeys, magicHourRequest, magicHourKeysConfigured } from './_magichour.js';
-
-let lastSnapshot = null;
-let lastCheckedAt = 0;
-let pendingCheck = null;
 
 function result(id, label, env, state, detail, extra = {}) {
   return { id, label, env, state, detail, ...extra };
@@ -26,9 +22,7 @@ async function probe(url, headers, label) {
       signal: AbortSignal.timeout(8000),
       cache: 'no-store'
     });
-    if (response.ok) {
-      return { state: 'ok', detail: 'تم قبول المفتاح والاتصال بالمزود بنجاح.' };
-    }
+    if (response.ok) return { state: 'ok', detail: 'تم قبول المفتاح والاتصال بالمزود بنجاح.' };
     return { state: 'error', detail: explainHttp(response.status, label) };
   } catch (error) {
     const timeout = error?.name === 'TimeoutError' || error?.name === 'AbortError';
@@ -39,18 +33,18 @@ async function probe(url, headers, label) {
   }
 }
 
-async function collectStatus() {
+async function collectStatus(req) {
   const aiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
   const aiBase = (process.env.AI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, '');
   const shotstackKey = process.env.SHOTSTACK_API_KEY;
   const shotstackEnv = process.env.SHOTSTACK_ENV === 'v1' ? 'v1' : 'stage';
-  const tursoUrl = process.env.TURSO_DATABASE_URL;
-  const tursoToken = process.env.TURSO_AUTH_TOKEN;
 
   const magicHourPromise = (async () => {
     try {
-      if (!await magicHourKeysConfigured()) return { state: 'missing', detail: 'أضف مفتاح Magic Hour في الخزنة أو متغيرات Vercel.' };
-      await magicHourRequest('/v1/voices', undefined, 'GET');
+      if (!await magicHourKeysConfigured(req)) {
+        return { state: 'missing', detail: 'أضف مفتاح Magic Hour في الخزنة أو متغيرات Vercel.' };
+      }
+      await magicHourRequest(req, '/v1/voices', undefined, 'GET');
       return { state: 'ok', detail: 'Magic Hour قبل المفتاح؛ جاهز لطلبات الصور والفيديو والصوت.' };
     } catch (error) {
       return { state: 'error', detail: error?.message || 'تعذر الاتصال بـ Magic Hour.' };
@@ -65,19 +59,21 @@ async function collectStatus() {
     ? probe('https://api.shotstack.io/edit/' + shotstackEnv + '/models', { 'x-api-key': shotstackKey, Accept: 'application/json' }, 'Shotstack')
     : Promise.resolve({ state: 'missing', detail: 'يلزم Shotstack لتجميع ملفات الوسائط في MP4 نهائي.' });
 
-  const databasePromise = !tursoUrl && !tursoToken
-    ? Promise.resolve({ state: 'missing', detail: 'قاعدة Turso غير مربوطة بعد.' })
-    : !tursoUrl || !tursoToken
-      ? Promise.resolve({ state: 'error', detail: 'إعداد Turso غير مكتمل؛ يلزم الرابط والمفتاح معًا.' })
-      : (async () => {
-          try {
-            const client = db();
-            await client.execute('SELECT 1 AS connection_test');
-            return { state: 'ok', detail: 'تم الاتصال بقاعدة Turso بنجاح.' };
-          } catch {
-            return { state: 'error', detail: 'تعذر الاتصال بقاعدة Turso؛ راجع الرابط وصلاحية Auth Token.' };
-          }
-        })();
+  const databasePromise = (async () => {
+    const config = databaseConfig(req);
+    if (!config) return { state: 'missing', detail: 'أضف Database URL وAuth Token لربط Turso.' };
+    try {
+      await db(req).execute('SELECT 1 AS connection_test');
+      return {
+        state: 'ok',
+        detail: config.source === 'environment'
+          ? 'قاعدة Turso متصلة من إعدادات الخادم.'
+          : 'قاعدة Turso متصلة من إعدادات الربط المشفرة لهذا المتصفح.'
+      };
+    } catch {
+      return { state: 'error', detail: 'تعذر الاتصال بقاعدة Turso؛ راجع الرابط وصلاحية Auth Token.' };
+    }
+  })();
 
   const [ai, magicHour, shotstack, database] = await Promise.all([
     aiPromise, magicHourPromise, shotstackPromise, databasePromise
@@ -108,18 +104,8 @@ export default async function handler(req, res) {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
 
-  if (lastSnapshot && Date.now() - lastCheckedAt < 30000) {
-    return res.status(200).json(lastSnapshot);
-  }
-  if (!pendingCheck) {
-    pendingCheck = collectStatus().then(snapshot => {
-      lastSnapshot = snapshot;
-      lastCheckedAt = Date.now();
-      return snapshot;
-    }).finally(() => { pendingCheck = null; });
-  }
   try {
-    return res.status(200).json(await pendingCheck);
+    return res.status(200).json(await collectStatus(req));
   } catch {
     return res.status(500).json({ error: 'تعذر فحص خدمات المنصة حاليًا.' });
   }
