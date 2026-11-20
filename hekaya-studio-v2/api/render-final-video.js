@@ -33,7 +33,7 @@ async function submitAssembly(body, res) {
   const videoClips = videos.map((item, index) => {
     const length = clamp(item.durationSeconds, 1, 60, 8);
     const clip = {
-      asset: { type: 'video', src: item.url, volume: 0 },
+      asset: { type: 'video', src: item.url },
       start: cursor,
       length,
       fit: 'cover',
