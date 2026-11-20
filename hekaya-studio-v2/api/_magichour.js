@@ -1,17 +1,6 @@
-// Magic Hour API helper: server-only key rotation and transient retry.
-const keys = () => [process.env.MAGICHOUR_API_KEYS, process.env.MAGICHOUR_API_KEY].filter(Boolean).flatMap(v => v.split(/[\\n,;]+/)).map(v => v.trim()).filter(Boolean);
-export async function magicHourRequest(path, body, method='POST') {
-  const list=keys(); if(!list.length) throw new Error('Magic Hour API key is not configured.');
-  const url='https://api.magichour.ai'+path; let last;
-  for(let i=0;i<list.length;i++) {
-    try {
-      const response=await fetch(url,{method,headers:{Authorization:'Bearer '+list[i],Accept:'application/json','Content-Type':'application/json'}, ...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(45000)});
-      const raw=await response.text(); let data; try{data=JSON.parse(raw)}catch{data={raw}};
-      if(response.ok) return {data,responseStatus:response.status,keyIndex:i};
-      last=new Error(data?.error?.message||data?.message||('Magic Hour HTTP '+response.status));
-      if(![401,403,408,429].includes(response.status)&&response.status<500) throw last;
-    } catch(e) { last=e; }
-  }
-  throw last||new Error('Magic Hour request failed');
-}
-export const magicHourConfigured=()=>keys().length>0;
+import { init } from './_db.js';
+import { createHash,createDecipheriv } from 'node:crypto';
+function decrypt(value){const secret=process.env.HEKAYA_SECRET_ENCRYPTION_KEY;if(!secret)return '';const [iv,tag,data]=value.split('.');const key=createHash('sha256').update(secret).digest();const d=createDecipheriv('aes-256-gcm',key,Buffer.from(iv,'base64'));d.setAuthTag(Buffer.from(tag,'base64'));return Buffer.concat([d.update(Buffer.from(data,'base64')),d.final()]).toString();}
+async function keys(){let list=[process.env.MAGICHOUR_API_KEYS,process.env.MAGICHOUR_API_KEY].filter(Boolean).flatMap(v=>v.split(/[\\n,;]+/)).map(v=>v.trim()).filter(Boolean);try{const d=await init();const row=await d.execute("SELECT value FROM settings WHERE id='magichour_keys'");if(row.rows[0]?.value&&process.env.HEKAYA_SECRET_ENCRYPTION_KEY)list.push(...JSON.parse(row.rows[0].value).map(decrypt).filter(Boolean));}catch{}return [...new Set(list)];}
+export async function magicHourRequest(path,body,method='POST'){const list=await keys();if(!list.length)throw new Error('Magic Hour API keys are not configured.');let last;for(const key of list){try{const response=await fetch('https://api.magichour.ai'+path,{method,headers:{Authorization:'Bearer '+key,Accept:'application/json','Content-Type':'application/json'},...(body!==undefined?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(45000)});const raw=await response.text();let data;try{data=JSON.parse(raw)}catch{data={raw}};if(response.ok)return {data,responseStatus:response.status};last=new Error(data?.error?.message||data?.message||('Magic Hour HTTP '+response.status));if(![401,403,408,429].includes(response.status)&&response.status<500)throw last;}catch(e){last=e;}}throw last||new Error('Magic Hour request failed');}
+export async function magicHourKeysConfigured(){return (await keys()).length>0;}
