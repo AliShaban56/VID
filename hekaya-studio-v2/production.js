@@ -3,6 +3,52 @@
   const escHtml = (value) => String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   let pkg = null;
 
+  const providerStateLabels = {
+    ok: 'المفتاح مقبول',
+    missing: 'غير مضاف',
+    error: 'فيه مشكلة'
+  };
+
+  window.refreshProviderStatuses = async function () {
+    const root = byId('providerStatusList');
+    const updated = byId('providerStatusUpdated');
+    if (!root) return;
+    root.innerHTML = '<div class="status">جارٍ فحص المفاتيح والاتصال بالخدمات...</div>';
+    try {
+      const response = await fetch('/api/provider-status', {cache: 'no-store'});
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'تعذر فحص الخدمات');
+      const cards = (data.providers || []).map(provider => {
+        const state = ['ok', 'missing', 'error'].includes(provider.state) ? provider.state : 'error';
+        const tone = state === 'ok' ? '#16794b' : state === 'missing' ? '#64748b' : '#b42318';
+        const background = state === 'ok' ? '#103628' : state === 'missing' ? '#202b45' : '#3b2028';
+        const meta = [
+          provider.model ? 'الموديل: ' + provider.model : '',
+          provider.videoModel ? 'فيديو: ' + provider.videoModel : '',
+          provider.speechModel ? 'تعليق صوتي: ' + provider.speechModel : '',
+          provider.musicModel ? 'موسيقى: ' + provider.musicModel : '',
+          provider.environment ? 'البيئة: ' + provider.environment : '',
+          provider.note || ''
+        ].filter(Boolean).join(' • ');
+        return '<article class="status" style="border:1px solid ' + tone + ';background:' + background + ';min-height:150px">' +
+          '<div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap">' +
+          '<b>' + escHtml(provider.label) + '</b>' +
+          '<span style="color:' + tone + ';font-weight:700">' + escHtml(providerStateLabels[state]) + '</span></div>' +
+          '<p class="muted"><b>متغير الإعداد:</b> ' + escHtml(provider.env || '') + '</p>' +
+          (meta ? '<p class="muted">' + escHtml(meta) + '</p>' : '') +
+          '<p>' + escHtml(provider.detail || '') + '</p></article>';
+      }).join('');
+      root.innerHTML = cards || '<div class="status">لم يتم العثور على خدمات للفحص.</div>';
+      if (updated) {
+        const time = data.checkedAt ? new Date(data.checkedAt).toLocaleString('ar-EG') : '';
+        updated.textContent = (time ? 'آخر فحص: ' + time + ' — ' : '') + (data.note || '');
+      }
+    } catch (error) {
+      root.innerHTML = '<div class="status" style="color:#ffb4ab">تعذر فحص الخدمات: ' + escHtml(error.message) + '</div>';
+      if (updated) updated.textContent = 'أعد الفحص بعد التأكد من نشر آخر نسخة.';
+    }
+  };
+
   window.createStory = async function () {
     const concept = (byId('story')?.value || '').trim();
     const status = byId('productionStatus');
@@ -196,4 +242,5 @@
       }
     }
   } catch {}
+  window.refreshProviderStatuses();
 })();
