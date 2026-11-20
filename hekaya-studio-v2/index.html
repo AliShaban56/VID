@@ -1,83 +1,33 @@
-<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>حكاية — استوديو الفيديو</title><style>*{box-sizing:border-box}body{margin:0;background:#0b1020;color:#e7eaf5;font-family:system-ui,Arial}header{padding:25px 8%;border-bottom:1px solid #25304b}main{max-width:1100px;margin:30px auto;padding:20px}.panel{background:#151d33;border:1px solid #293653;border-radius:16px;padding:24px;margin:18px 0}textarea,input{width:100%;padding:14px;background:#0c1428;color:white;border:1px solid #33415e;border-radius:10px;margin:10px 0}button{background:#7765e8;color:white;border:0;padding:12px 20px;border-radius:10px;cursor:pointer;margin:4px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:15px}.muted{color:#9eabc5}.status{padding:10px;border-radius:8px;background:#202b45}.preview{max-width:100%;border-radius:12px;margin-top:12px}#accessMessage{margin-top:12px}</style></head><body><header><h1>حكاية — استوديو القصص والفيديو</h1><p class="muted">من فكرة القصة إلى فيلم MP4 — إدارة إنتاج بالذكاء الاصطناعي عبر API</p></header><main><section class="panel" id="providerPanel">
-<h2>🔌 المحركات والمفاتيح وحالة الاتصال</h2>
-<p class="muted">أسماء الخدمات ومفاتيح إعدادها وحالة الاتصال الفعلية. القيم السرية نفسها لا تظهر على الصفحة.</p>
-<div id="providerStatusList" class="grid"><div class="status">جارٍ فحص الخدمات...</div></div>
-<button type="button" onclick="refreshProviderStatuses()">↻ فحص المفاتيح الآن</button>
-<p id="providerStatusUpdated" class="muted"></p>
-<div class="status" style="margin-top:12px">
-<b>أسماء المتغيرات المطلوبة في Vercel → Settings → Environment Variables</b><br>
-• كتابة القصص: <code>AI_API_KEY</code> أو <code>OPENAI_API_KEY</code><br>
-• الصور: <code>IMAGE_API_KEY</code> (أو استخدام مفتاح القصص نفسه)<br>
-• الفيديو والصوت والموسيقى: <code>SHOTSTACK_API_KEY</code><br>
-• قاعدة البيانات: <code>TURSO_DATABASE_URL</code> و <code>TURSO_AUTH_TOKEN</code><br>
-• عناوين/نماذج اختيارية: <code>AI_BASE_URL</code>، <code>AI_TEXT_MODEL</code>، <code>IMAGE_API_BASE_URL</code>، <code>IMAGE_MODEL</code>، <code>SHOTSTACK_ENV</code>، <code>SHOTSTACK_VIDEO_MODEL</code>، <code>SHOTSTACK_TTS_MODEL</code>، <code>SHOTSTACK_MUSIC_MODEL</code>
-</div>
-<p class="muted">اختبار الحالة لا ينفذ توليد صورة أو فيديو مدفوعًا. نجاح فحص المفتاح يعني أن المزود قبله، وليس ضمانًا أن كل موديل أو صلاحية توليد متاحة.</p>
-</section><section class="panel"><h2>القصة والإنتاج الذكي</h2><p class="muted">اكتب الفكرة، وسيؤلف محرك الذكاء الاصطناعي القصة والسيناريو ويجهز أوامر الصورة والحركة والصوت لكل مشهد.</p><div class="grid"><div><label>النوع الدرامي</label><input id="genre" value="مغامرة مشوقة"></div><div><label>مدة الفيلم بالثواني</label><input id="duration" type="number" min="30" max="450" value="120"></div><div><label>عدد المشاهد</label><input id="sceneCount" type="number" min="3" max="30" value="10"></div><div><label>الأسلوب البصري</label><input id="visualStyle" value="سينمائي واقعي، شخصيات متسقة"></div></div><div class="grid"><div><label>نسبة أبعاد الفيديو</label><select id="videoAspectRatio"><option value="16:9">أفقي 16:9</option><option value="9:16">رأسي 9:16</option><option value="1:1">مربع 1:1</option></select></div><div><label>موديل الفيديو</label><input id="videoModel" value="seedance-2.0-text-to-video"></div></div><div id="productionStatus" class="status">جاهز لاستقبال فكرة القصة.</div><div id="productionBrief" class="muted"></div><button onclick="createStory()">✦ ألّف القصة وجهّز خطة الإنتاج</button><button onclick="renderFinalVideo()">🎬 أنشئ الفيديو النهائي (حركة + تعليق صوتي + موسيقى + MP4)</button><button onclick="resumeFinalVideo()">استكمال متابعة الفيديو</button><div id="renderStatus" class="status">الفيديو النهائي لم يبدأ بعد.</div><div id="videoOutput"></div><textarea id="story" rows="9" placeholder="اكتب فكرتك أو قصتك..."></textarea><button onclick="split()">تقسيم لمشاهد</button><button onclick="saveStory()">حفظ القصة</button><button onclick="saveToDB()">حفظ في قاعدة البيانات</button><button onclick="checkDB()">اختبار قاعدة البيانات</button><button onclick="loadProjects()">تحميل المشاريع المحفوظة</button><div id="dbmsg" class="muted"></div><div id="projectlist"></div></section><section class="panel"><h2>المشاهد</h2><div id="scenes" class="grid"></div></section><section class="panel"><h2>توليد صورة</h2><textarea id="prompt" rows="4" placeholder="وصف المشهد"></textarea><button onclick="generate()">توليد صورة</button><div id="result"></div><p id="msg" class="muted"></p></section></main><script>
-function esc(x){return String(x??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
-let currentScenePrompts=[];
-function renderSavedScenes(scenes){
-  const root=document.getElementById('scenes');
-  currentScenePrompts=scenes.map(x=>String(x.image_prompt||x.text||''));
-  root.innerHTML=scenes.map((x,i)=>'<div class="panel"><b>مشهد '+(i+1)+'</b><p>'+esc(x.text||'')+'</p><button type="button" data-scene-index="'+i+'">استخدم الوصف</button></div>').join('')||'لا توجد مشاهد محفوظة.';
-  root.querySelectorAll('[data-scene-index]').forEach(button=>button.addEventListener('click',()=>pick(currentScenePrompts[Number(button.dataset.sceneIndex)])));
-}
-function pick(x){document.getElementById('prompt').value=String(x||'')}
-async function split(){
-  const parts=document.getElementById('story').value.trim().split(/[.!?؟\\n]+/).map(x=>x.trim()).filter(Boolean);
-  renderSavedScenes(parts.map((text,i)=>({text,image_prompt:text,position:i})));
-  const projectId=localStorage.getItem('hekaya_project_id');
-  if(projectId){
-    for(let i=0;i<parts.length;i++){
-      const response=await fetch('/api/scenes',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:projectId+'-scene-'+i,projectId,position:i,text:parts[i],imagePrompt:parts[i]})});
-      if(!response.ok) throw new Error('فشل حفظ المشهد '+(i+1));
-    }
-  }
-}
-async function saveStory(){
-  localStorage.setItem('hekaya_story',document.getElementById('story').value);
-  if(localStorage.getItem('hekaya_project_id')) return saveToDB();
-  alert('تم حفظ القصة على هذا الجهاز. لحفظها بشكل دائم اضغط حفظ في قاعدة البيانات.');
-}
-async function loadProjects(){
-  const el=document.getElementById('projectlist');el.textContent='تحميل...';
-  try{
-    const r=await fetch('/api/projects'),j=await r.json();if(!r.ok)throw Error(j.error||'تعذر تحميل المشاريع');
-    el.replaceChildren();
-    if(!(j.projects||[]).length){el.textContent='لا توجد مشاريع محفوظة';return}
-    j.projects.forEach(project=>{
-      const row=document.createElement('div');row.className='status';
-      const label=document.createElement('b');label.textContent=project.title||'مشروع دون عنوان';
-      const button=document.createElement('button');button.textContent='فتح';
-      button.addEventListener('click',()=>openProject(project.id));
-      row.append(label,button);el.append(row);
-    });
-  }catch(e){el.textContent=e.message}
-}
-async function openProject(id){
-  try{
-    const r=await fetch('/api/projects'),j=await r.json();if(!r.ok)throw Error(j.error||'تعذر تحميل المشروع');
-    const project=(j.projects||[]).find(x=>x.id===id);if(!project)throw Error('المشروع غير موجود');
-    document.getElementById('story').value=project.story||'';
-    localStorage.setItem('hekaya_project_id',id);localStorage.setItem('hekaya_story',project.story||'');
-    const sr=await fetch('/api/scenes?projectId='+encodeURIComponent(id)),sj=await sr.json();
-    if(!sr.ok)throw Error(sj.error||'تعذر تحميل المشاهد');
-    renderSavedScenes(sj.scenes||[]);
-    document.getElementById('dbmsg').textContent='تم تحميل المشروع ومشاهده.';
-  }catch(e){document.getElementById('dbmsg').textContent=e.message}
-}
-async function checkDB(){
-  const el=document.getElementById('dbmsg');el.textContent='جارٍ الاتصال...';
-  try{const r=await fetch('/api/db-init',{method:'POST'}),j=await r.json();el.textContent=r.ok?'اتصال قاعدة البيانات جاهز وتم إعداد الجداول.':(j.error||'تعذر الاتصال')}catch(e){el.textContent='تعذر الاتصال: '+e.message}
-}
-async function saveToDB(){
-  const el=document.getElementById('dbmsg');el.textContent='جارٍ حفظ المشروع...';
-  try{
-    const r=await fetch('/api/projects',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({id:localStorage.getItem('hekaya_project_id')||undefined,title:'مشروعي',story:document.getElementById('story').value})});
-    const j=await r.json();if(!r.ok)throw Error(j.error||'فشل الحفظ');
-    localStorage.setItem('hekaya_project_id',j.id);el.textContent='تم حفظ المشروع في Turso. جارٍ حفظ المشاهد.';
-    await split();el.textContent='تم حفظ المشروع والمشاهد في Turso.';
-  }catch(e){el.textContent='فشل الحفظ: '+e.message}
-}
-document.getElementById('story').value=localStorage.getItem('hekaya_story')||'';
-</script><script src="/production.js"></script></body></html>
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>حكاية | استوديو صناعة الفيديو</title>
+<style>
+:root{--bg:#f4f4f4;--fg:#111;--panel:#fff;--line:#d5d5d5;--muted:#666;--accent:#111;--shadow:0 8px 24px rgba(0,0,0,.04)}
+[data-theme="dark"]{--bg:#0a0a0a;--fg:#f6f6f6;--panel:#171717;--line:#343434;--muted:#aaa;--accent:#fff;--shadow:none}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,Segoe UI,Arial;transition:.2s}
+header{border-bottom:1px solid var(--line);padding:18px 4vw;display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;background:var(--bg);z-index:5}
+.logo{font-size:25px;font-weight:900;letter-spacing:-1px}.sub{color:var(--muted);font-size:13px}
+button{background:var(--accent);color:var(--bg);border:1px solid var(--fg);border-radius:12px;padding:11px 16px;font-weight:750;cursor:pointer}button.secondary{background:var(--panel);color:var(--fg);border-color:var(--line)}button:disabled{opacity:.45;cursor:not-allowed}
+main{max-width:1280px;margin:24px auto;padding:0 18px}.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px}.tab{background:var(--panel);color:var(--fg);border:1px solid var(--line)}.tab.active{background:var(--fg);color:var(--bg)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:22px;margin:14px 0;box-shadow:var(--shadow)}h1,h2,h3{margin-top:0}h2{font-size:20px}textarea,input,select{width:100%;background:var(--bg);color:var(--fg);border:1px solid var(--line);padding:13px;border-radius:12px;font:inherit}textarea{min-height:120px;resize:vertical}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:15px}.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.muted{color:var(--muted)}.progress{padding:14px;border:1px solid var(--line);border-radius:12px;white-space:pre-line}.scene{border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0}.scene img,.asset img,.asset video{width:100%;border-radius:12px;object-fit:cover;max-height:500px}.scene h3{font-size:16px}.asset{border:1px solid var(--line);border-radius:15px;padding:12px;overflow:hidden}.asset video{max-height:320px}.assets{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.asset-type{display:inline-block;border:1px solid var(--line);padding:3px 9px;border-radius:99px;font-size:12px}.hidden{display:none}.status-good{border-color:#888}.status-bad{border-color:#888}.mono{font-family:ui-monospace,monospace;word-break:break-all}.divider{height:1px;background:var(--line);margin:20px 0}footer{padding:30px;text-align:center;color:var(--muted)}
+@media(max-width:600px){header{padding:14px}.logo{font-size:21px}.panel{padding:16px}main{padding:0 12px}}
+</style>
+</head>
+<body>
+<header><div><div class="logo">حكاية</div><div class="sub">استوديو القصص إلى الفيديو النهائي</div></div><div class="row"><button class="secondary" id="themeToggle" onclick="toggleTheme()">◐ تبديل النمط</button></div></header>
+<main>
+<nav class="tabs"><button class="tab active" id="tabStudio" onclick="showTab('studio')">استوديو الإنشاء</button><button class="tab" id="tabLibrary" onclick="showTab('library')">المكتبة</button><button class="tab" id="tabProviders" onclick="showTab('providers')">المحركات والاتصال</button></nav>
+<section id="studio">
+<div class="panel"><h1>اصنع قصة وفيديو من فكرة واحدة</h1><p class="muted">اكتب فكرتك؛ حكاية تتولى السيناريو وتقسيم المشاهد وأوامر الصور والحركة ثم إنشاء الصور وتجهيز الفيديو النهائي.</p>
+<textarea id="concept" placeholder="اكتب فكرة القصة هنا..."></textarea>
+<div class="grid"><div><label>المدة (ثانية)</label><input id="duration" type="number" value="60" min="30" max="900"></div><div><label>عدد المشاهد</label><input id="sceneCount" type="number" value="5" min="3" max="30"></div><div><label>الأسلوب</label><select id="style"><option>سينمائي واقعي</option><option>أنيميشن ثلاثي الأبعاد</option><option>رسوم توضيحية</option><option>وثائقي</option><option>كوميدي</option></select></div><div><label>نسبة الفيديو</label><select id="ratio"><option value="9:16">9:16 — عمودي</option><option value="16:9">16:9 — أفقي</option><option value="1:1">1:1 — مربع</option></select></div></div>
+<div class="row" style="margin-top:12px"><button id="startBtn" onclick="startProduction()">🎬 ابدأ الإنتاج بالكامل</button><button class="secondary" onclick="generateOnlyStory()">✍️ كتابة وتقسيم فقط</button></div><div id="productionStatus" class="progress hidden" style="margin-top:16px"></div></div>
+<div id="storyResult" class="panel hidden"></div><div id="scenesResult"></div><div id="finalResult" class="panel hidden"></div>
+</section>
+<section id="library" class="hidden"><div class="panel"><div class="row" style="justify-content:space-between"><div><h2>مكتبة ملفات المشروع</h2><p class="muted">صور المشاهد، فيديوهات المشاهد، الفيديو النهائي والقصص المحفوظة.</p></div><button class="secondary" onclick="refreshLibrary()">تحديث المكتبة</button></div><div id="libraryStatus" class="muted">جارٍ التحميل...</div><div id="libraryAssets" class="assets"></div></div></section>
+<section id="providers" class="hidden"><div class="panel"><h2>المحركات وحالة الاتصال</h2><p class="muted">المفتاح لا يُعرض. الاختبار يوضح الاتصال بالمزود أو قاعدة البيانات.</p><button class="secondary" onclick="refreshProviderStatuses()">اختبار الاتصالات</button><div id="providerStatusList" class="grid" style="margin-top:15px"></div><div id="providerStatusUpdated" class="muted"></div><div class="divider"></div><h3>متغيرات إعداد الخادم</h3><p class="mono">AI_API_KEY • IMAGE_API_KEY • SHOTSTACK_API_KEY • TURSO_DATABASE_URL • TURSO_AUTH_TOKEN</p><p class="muted">لا تدخل المفاتيح في هذه الصفحة. أضفها في إعدادات Vercel السرية.</p></div></section>
+</main><footer>حكاية — من الفكرة إلى الفيلم</footer>
+<script src="/production.js"></script>
+</body></html>
