@@ -3,75 +3,6 @@
   const escHtml = (value) => String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   let pkg = null;
 
-  window.login = async function () {
-    const message = byId('accessMessage');
-    try {
-      const response = await fetch('/api/login', {
-        method: 'POST', headers: {'content-type':'application/json'},
-        body: JSON.stringify({password: byId('accessPassword')?.value || ''})
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'تعذر تسجيل الدخول');
-      document.body.classList.add('authenticated');
-      byId('accessPassword').value = '';
-      if (message) message.textContent = 'تم تسجيل الدخول بنجاح.';
-    } catch (error) {
-      if (message) message.textContent = error.message;
-    }
-  };
-
-  async function checkAccess() {
-    const message = byId('accessMessage');
-    try {
-      const response = await fetch('/api/auth-status');
-      const data = await response.json();
-      if (response.ok && data.authenticated) {
-        document.body.classList.add('authenticated');
-        if (message) message.textContent = 'أنت مسجل الدخول.';
-      } else if (response.status === 503) {
-        if (message) message.textContent = data.error || 'أضف APP_ACCESS_PASSWORD في إعدادات Vercel.';
-      } else if (message) {
-        message.textContent = 'أدخل كلمة مرور الاستوديو للمتابعة.';
-      }
-    } catch (error) {
-      if (message) message.textContent = 'تعذر التحقق من الدخول: ' + error.message;
-    }
-  }
-  window.changeStudioPassword = async function () {
-    const currentPassword = byId('currentStudioPassword')?.value || '';
-    const newPassword = byId('newStudioPassword')?.value || '';
-    const confirmation = byId('confirmStudioPassword')?.value || '';
-    const message = byId('passwordChangeMessage');
-    if (!currentPassword || !newPassword || !confirmation) {
-      if (message) message.textContent = 'املأ حقول كلمة المرور الثلاثة.';
-      return;
-    }
-    if (newPassword.length < 12) {
-      if (message) message.textContent = 'اختر كلمة مرور من 12 حرفًا على الأقل.';
-      return;
-    }
-    if (newPassword !== confirmation) {
-      if (message) message.textContent = 'تأكيد كلمة المرور غير مطابق.';
-      return;
-    }
-    if (message) message.textContent = 'جارٍ التحقق وحفظ كلمة المرور بشكل آمن...';
-    try {
-      const response = await fetch('/api/change-password', {
-        method: 'POST',
-        headers: {'content-type':'application/json'},
-        body: JSON.stringify({currentPassword, newPassword})
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'تعذر تغيير كلمة المرور.');
-      byId('currentStudioPassword').value = '';
-      byId('newStudioPassword').value = '';
-      byId('confirmStudioPassword').value = '';
-      if (message) message.textContent = data.message || 'تم تغيير كلمة المرور بنجاح.';
-    } catch (error) {
-      if (message) message.textContent = error.message;
-    }
-  };
-
   window.createStory = async function () {
     const concept = (byId('story')?.value || '').trim();
     const status = byId('productionStatus');
@@ -265,5 +196,4 @@
       }
     }
   } catch {}
-  checkAccess();
 })();
