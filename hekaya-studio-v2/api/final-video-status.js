@@ -14,7 +14,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'بيانات مشروع Magic Hour غير صحيحة.' });
     }
     try {
-      const details = await magicHourRequest(req, '/v1/' + type + '-projects/' + encodeURIComponent(id));
+      const details = await magicHourRequest(req, '/v1/' + type + '-projects/' + encodeURIComponent(id), undefined, 'GET');
       const state = String(details?.status || 'unknown').toLowerCase();
       const mediaUrl = details?.downloads?.[0]?.url || null;
       const error = details?.error?.message || details?.error || null;
