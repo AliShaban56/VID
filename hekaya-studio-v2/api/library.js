@@ -6,7 +6,7 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
   try {
-    const d = await init();
+    const d = await init(req);
     const [projects, scenes, jobs] = await Promise.all([
       d.execute('SELECT id,title,story,updated_at FROM projects ORDER BY updated_at DESC'),
       d.execute('SELECT id,project_id,position,text,image_prompt,video_prompt,image_url,video_url,status,updated_at FROM scenes ORDER BY project_id,position'),
