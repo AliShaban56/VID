@@ -1,49 +1,64 @@
 import { requireAccess } from './_auth.js';
 import { init } from './_db.js';
+import { magicHourRequest } from './_magichour.js';
 
 export default async function handler(req, res) {
-  if (!requireAccess(req, res)) return;
   res.setHeader('Cache-Control', 'no-store');
+  if (!requireAccess(req, res)) return;
   if (req.method !== 'GET') return res.status(405).json({ error: 'Method not allowed' });
-  const key = process.env.SHOTSTACK_API_KEY;
-  if (!key) return res.status(503).json({ error: 'SHOTSTACK_API_KEY is not configured.' });
-  const id = String(req.query?.id || '');
-  if (!/^[a-zA-Z0-9-]{8,80}$/.test(id)) return res.status(400).json({ error: 'A valid render id is required.' });
 
+  if (req.query?.provider === 'magichour') {
+    const type = String(req.query?.type || 'image');
+    const id = String(req.query?.id || '');
+    if (!['image', 'video', 'audio'].includes(type) || !/^[a-zA-Z0-9_-]{8,100}$/.test(id)) {
+      return res.status(400).json({ error: 'بيانات مشروع Magic Hour غير صحيحة.' });
+    }
+    try {
+      const details = await magicHourRequest('/v1/' + type + '-projects/' + encodeURIComponent(id));
+      const state = String(details?.status || 'unknown').toLowerCase();
+      const mediaUrl = details?.downloads?.[0]?.url || null;
+      const error = details?.error?.message || details?.error || null;
+      if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
+        try {
+          const db = await init();
+          await db.execute({
+            sql: 'UPDATE generation_jobs SET status=?,result_url=?,error=? WHERE id=?',
+            args: [state, mediaUrl || '', error ? String(error) : '', id]
+          });
+        } catch {}
+      }
+      return res.status(200).json({ provider: 'magichour', projectId: id, type, status: state, mediaUrl, downloads: details?.downloads || [], error });
+    } catch (error) {
+      return res.status(502).json({ error: error.message || 'تعذر جلب حالة مشروع Magic Hour.' });
+    }
+  }
+
+  const key = process.env.SHOTSTACK_API_KEY;
+  if (!key) return res.status(503).json({ error: 'أضف SHOTSTACK_API_KEY لتركيب الفيديو النهائي.' });
+  const id = String(req.query?.id || '');
+  if (!/^[a-zA-Z0-9-]{8,80}$/.test(id)) return res.status(400).json({ error: 'معرّف الرندر غير صحيح.' });
   const version = process.env.SHOTSTACK_ENV === 'v1' ? 'v1' : 'stage';
   try {
     const upstream = await fetch('https://api.shotstack.io/edit/' + version + '/render/' + encodeURIComponent(id) + '?data=false', {
-      headers: { Accept: 'application/json', 'x-api-key': key }
+      headers: { Accept: 'application/json', 'x-api-key': key },
+      signal: AbortSignal.timeout(15000),
+      cache: 'no-store'
     });
-    const raw = await upstream.text();
-    let data;
-    try { data = JSON.parse(raw); } catch { data = { raw }; }
-    if (!upstream.ok) {
-      return res.status(upstream.status).json({ error: data?.error || data?.message || 'Unable to read render status.' });
-    }
-
-    const r = data?.response || data;
-    const state = String(r?.status || 'unknown').toLowerCase();
-    const videoUrl = state === 'done' ? (r?.url || null) : null;
-    const error = state === 'failed' ? (r?.error || 'Video rendering failed.') : null;
-
+    const data = await upstream.json().catch(() => ({}));
+    if (!upstream.ok) return res.status(upstream.status).json({ error: data?.error || data?.message || 'تعذر قراءة حالة الفيديو.' });
+    const result = data?.response || data;
+    const state = String(result?.status || 'unknown').toLowerCase();
+    const videoUrl = state === 'done' ? (result?.url || null) : null;
+    const error = state === 'failed' ? (result?.error || 'فشل تركيب الفيديو.') : null;
     try {
-      const d = await init();
-      await d.execute({
+      const db = await init();
+      await db.execute({
         sql: 'UPDATE generation_jobs SET status=?,result_url=?,error=? WHERE id=?',
         args: [state, videoUrl || '', error || '', id]
       });
     } catch {}
-
-    return res.status(200).json({
-      renderId: id,
-      status: state,
-      videoUrl,
-      owner: r?.owner || null,
-      error,
-      updatedAt: r?.updated || null
-    });
+    return res.status(200).json({ renderId: id, status: state, videoUrl, error, updatedAt: result?.updated || null });
   } catch (error) {
-    return res.status(502).json({ error: 'Could not connect to Shotstack: ' + error.message });
+    return res.status(502).json({ error: 'تعذر الاتصال بمحرك تركيب الفيديو.' });
   }
 }
