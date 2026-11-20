@@ -35,7 +35,24 @@ main{max-width:1280px;margin:24px auto;padding:0 18px}.tabs{display:flex;gap:8px
 <div id="storyResult" class="panel hidden"></div><div id="scenesResult"></div><div id="finalResult" class="panel hidden"></div>
 </section>
 <section id="library" class="hidden"><div class="panel"><div class="row" style="justify-content:space-between"><div><h2>مكتبة ملفات المشروع</h2><p class="muted">صور المشاهد، فيديوهات المشاهد، الفيديو النهائي والقصص المحفوظة.</p></div><button class="secondary" onclick="refreshLibrary()">تحديث المكتبة</button></div><div id="libraryStatus" class="muted">جارٍ التحميل...</div><div id="libraryAssets" class="assets"></div></div></section>
-<section id="providers" class="hidden"><div class="panel"><h2>المحركات وحالة الاتصال</h2><p class="muted">المفتاح لا يُعرض. الاختبار يوضح الاتصال بالمزود أو قاعدة البيانات.</p><button class="secondary" onclick="refreshProviderStatuses()">اختبار الاتصالات</button><div id="providerStatusList" class="grid" style="margin-top:15px"></div><div id="providerStatusUpdated" class="muted"></div><div class="divider"></div><h3>خزنة مفاتيح Magic Hour</h3><p class="muted">تُخزن المفاتيح مشفرة في قاعدة البيانات ولا يتم عرضها مرة أخرى.</p><div class="row"><input id="magicKeyInput" type="password" autocomplete="off" placeholder="أدخل Magic Hour API Key"><button onclick="addMagicKey()">حفظ المفتاح</button></div><div id="magicKeysList" style="margin-top:12px"></div><div class="divider"></div><h3>متغيرات إعداد الخادم</h3><p class="mono">AI_API_KEY • IMAGE_API_KEY • SHOTSTACK_API_KEY • TURSO_DATABASE_URL • TURSO_AUTH_TOKEN</p><p class="muted">يلزم ضبط HEKAYA_SECRET_ENCRYPTION_KEY في Vercel لتشفير الخزنة.</p></div></section>
+<section id="providers" class="hidden"><div class="panel"><h2>المحركات وحالة الاتصال</h2><p class="muted">المفتاح لا يُعرض. الاختبار يوضح الاتصال بالمزود أو قاعدة البيانات.</p><button class="secondary" onclick="refreshProviderStatuses()">اختبار الاتصالات</button><div id="providerStatusList" class="grid" style="margin-top:15px"></div><div id="providerStatusUpdated" class="muted"></div>
+<div class="divider"></div>
+<section class="panel" style="margin:0">
+  <h3>ربط قاعدة البيانات Turso</h3>
+  <p class="muted">أدخل بيانات قاعدة Turso لاختبار الاتصال وربط المشاريع والمشاهد والمكتبة. يتم إنشاء جداول حكاية تلقائيًا بعد نجاح الاتصال.</p>
+  <div class="grid">
+    <div><label for="tursoDatabaseUrl">Database URL</label><input id="tursoDatabaseUrl" type="url" autocomplete="url" placeholder="libsql://your-database.turso.io"></div>
+    <div><label for="tursoAuthToken">Auth Token</label><input id="tursoAuthToken" type="password" autocomplete="off" placeholder="ألصق رمز الوصول هنا"></div>
+  </div>
+  <div class="row" style="margin-top:12px">
+    <button onclick="connectDatabase()">اختبار وربط قاعدة البيانات</button>
+    <button class="secondary" onclick="initializeDatabase()">تهيئة الجداول</button>
+    <button class="secondary" onclick="disconnectDatabase()">فصل ربط هذا المتصفح</button>
+  </div>
+  <div id="databaseSetupStatus" class="progress hidden" role="status" style="margin-top:12px"></div>
+  <p class="muted">أنشئ قاعدة بيانات واحصل على الرابط والرمز من <a href="https://turso.tech/app" target="_blank" rel="noopener">لوحة Turso</a>. تُحفظ بيانات الربط مشفرة في ملف ارتباط HttpOnly لهذا المتصفح فقط. لربط جميع الأجهزة والبيئات بصورة دائمة، أضف TURSO_DATABASE_URL وTURSO_AUTH_TOKEN في إعدادات Environment Variables على Vercel.</p>
+</section>
+<div class="divider"></div><h3>خزنة مفاتيح Magic Hour</h3><p class="muted">تُخزن المفاتيح مشفرة في قاعدة البيانات ولا يتم عرضها مرة أخرى.</p><div class="row"><input id="magicKeyInput" type="password" autocomplete="off" placeholder="أدخل Magic Hour API Key"><button onclick="addMagicKey()">حفظ المفتاح</button></div><div id="magicKeysList" style="margin-top:12px"></div><div class="divider"></div><h3>متغيرات إعداد الخادم</h3><p class="mono">AI_API_KEY • IMAGE_API_KEY • SHOTSTACK_API_KEY • TURSO_DATABASE_URL • TURSO_AUTH_TOKEN</p><p class="muted">يلزم ضبط HEKAYA_SECRET_ENCRYPTION_KEY في Vercel لتشفير الخزنة.</p></div></section>
 </main><footer>حكاية — من الفكرة إلى الفيلم</footer>
 <script src="/production.js"></script>
 </body></html>
