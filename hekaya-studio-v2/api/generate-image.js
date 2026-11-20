@@ -15,7 +15,7 @@ export default async function handler(req, res) {
   const model = process.env.MAGICHOUR_IMAGE_MODEL || 'z-image-turbo';
 
   try {
-    const result = await magicHourRequest('/v1/ai-image-generator', {
+    const result = await magicHourRequest(req, '/v1/ai-image-generator', {
       name: String(body.name || 'Hekaya scene image').slice(0, 120),
       image_count: 1,
       style: { prompt, tool: 'general' },
@@ -25,15 +25,13 @@ export default async function handler(req, res) {
     });
     const projectId = result?.id;
     if (!projectId) return res.status(502).json({ error: 'Magic Hour لم يُرجع معرّف مشروع الصورة.' });
-    if (process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN) {
-      try {
-        const db = await init();
-        await db.execute({
-          sql: 'INSERT INTO generation_jobs(id,project_id,scene_id,kind,model,prompt,status) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
-          args: [projectId, typeof body.projectId === 'string' ? body.projectId : null, typeof body.sceneId === 'string' ? body.sceneId : null, 'image', model, prompt.slice(0, 2000), 'queued']
-        });
-      } catch {}
-    }
+    try {
+      const db = await init(req);
+      await db.execute({
+        sql: 'INSERT INTO generation_jobs(id,project_id,scene_id,kind,model,prompt,status) VALUES(?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',
+        args: [projectId, typeof body.projectId === 'string' ? body.projectId : null, typeof body.sceneId === 'string' ? body.sceneId : null, 'image', model, prompt.slice(0, 2000), 'queued']
+      });
+    } catch {}
     return res.status(202).json({ provider: 'magichour', projectId, status: 'queued', model, creditsCharged: result.credits_charged || null });
   } catch (error) {
     return res.status(502).json({ error: error.message || 'فشل طلب توليد الصورة من Magic Hour.' });
