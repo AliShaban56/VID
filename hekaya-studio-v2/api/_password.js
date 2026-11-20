@@ -1,5 +1,5 @@
 import { randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
-import { init } from './_db.js';
+import { init, databaseConfig } from './_db.js';
 
 function safeEqual(a, b) {
   const left = Buffer.from(String(a));
@@ -26,13 +26,12 @@ function verifyHash(password, encoded) {
   }
 }
 
-export async function verifyStudioPassword(password) {
+export async function verifyStudioPassword(password, req) {
   const supplied = String(password || '');
   if (!supplied || !process.env.APP_ACCESS_PASSWORD) return false;
 
-  const hasDatabase = Boolean(process.env.TURSO_DATABASE_URL && process.env.TURSO_AUTH_TOKEN);
-  if (hasDatabase) {
-    const d = await init();
+  if (databaseConfig(req)) {
+    const d = await init(req);
     const result = await d.execute({
       sql: 'SELECT value FROM settings WHERE id=?',
       args: ['auth_password_hash']
@@ -44,11 +43,11 @@ export async function verifyStudioPassword(password) {
   return safeEqual(supplied, process.env.APP_ACCESS_PASSWORD);
 }
 
-export async function saveStudioPassword(password) {
-  if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
-    throw new Error('تغيير كلمة المرور يحتاج تفعيل قاعدة Turso أولاً بإضافة TURSO_DATABASE_URL وTURSO_AUTH_TOKEN في إعدادات Vercel.');
+export async function saveStudioPassword(password, req) {
+  if (!databaseConfig(req)) {
+    throw new Error('اربط قاعدة Turso أولاً من صفحة المحركات والاتصال قبل تغيير كلمة المرور.');
   }
-  const d = await init();
+  const d = await init(req);
   const encoded = hashPassword(password);
   await d.execute({
     sql: 'INSERT INTO settings(id,value) VALUES(?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value,updated_at=CURRENT_TIMESTAMP',
