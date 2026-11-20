@@ -19,8 +19,25 @@ export default async function handler(req, res) {
       if (row.image_url) assets.push({type:'image',title:title+' — صورة المشهد '+(Number(row.position)+1),url:row.image_url,project:title,projectId:row.project_id,sceneId:row.id});
       if (row.video_url) assets.push({type:'video',title:title+' — فيديو المشهد '+(Number(row.position)+1),url:row.video_url,project:title,projectId:row.project_id,sceneId:row.id});
     }
+    const seenUrls = new Set(assets.map(asset => asset.url).filter(Boolean));
     for (const row of jobs.rows || []) {
-      if (row.result_url && (row.kind==='final-video'||row.kind==='video')) assets.push({type:'video',title:(projects.rows||[]).find(p=>p.id===row.project_id)?.title+' — الفيديو النهائي',url:row.result_url,projectId:row.project_id,project:(projects.rows||[]).find(p=>p.id===row.project_id)?.title||'مشروع',jobId:row.id});
+      if (!row.result_url || seenUrls.has(row.result_url)) continue;
+      const project = (projects.rows || []).find(p => p.id === row.project_id);
+      const scene = (scenes.rows || []).find(s => s.id === row.scene_id);
+      const type = row.kind === 'image' ? 'image' : row.kind === 'audio' ? 'audio' : (row.kind === 'video' || row.kind === 'final-video') ? 'video' : null;
+      if (!type) continue;
+      seenUrls.add(row.result_url);
+      const label = type === 'audio' ? 'صوت' : type === 'image' ? 'صورة' : row.kind === 'final-video' ? 'الفيديو النهائي' : 'فيديو';
+      const suffix = scene ? ' — المشهد ' + (Number(scene.position) + 1) : '';
+      assets.push({
+        type,
+        title: (project?.title || 'مشروع') + ' — ' + label + suffix,
+        url: row.result_url,
+        project: project?.title || 'مشروع',
+        projectId: row.project_id,
+        sceneId: row.scene_id || null,
+        jobId: row.id
+      });
     }
     for (const p of projects.rows || []) assets.push({type:'story',title:p.title||'قصة',project:p.title,url:null,projectId:p.id,excerpt:String(p.story||'').slice(0,400),updatedAt:p.updated_at});
     return res.status(200).json({projects:projects.rows||[],assets,scenes:scenes.rows||[],jobs:jobs.rows||[]});
