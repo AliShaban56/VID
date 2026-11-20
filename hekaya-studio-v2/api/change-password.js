@@ -26,10 +26,10 @@ export default async function handler(req, res) {
   if (newPassword === currentPassword) return res.status(400).json({ error: 'اختر كلمة مرور مختلفة عن الحالية.' });
 
   try {
-    if (!await verifyStudioPassword(currentPassword)) {
+    if (!await verifyStudioPassword(currentPassword, req)) {
       return res.status(401).json({ error: 'كلمة المرور الحالية غير صحيحة.' });
     }
-    await saveStudioPassword(newPassword);
+    await saveStudioPassword(newPassword, req);
     return res.status(200).json({ ok: true, message: 'تم تحديث كلمة المرور. ستستخدمها في تسجيل الدخول القادم.' });
   } catch (error) {
     return res.status(503).json({ error: error.message || 'تعذر حفظ كلمة المرور.' });
