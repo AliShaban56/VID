@@ -3,6 +3,40 @@
   const escHtml = (value) => String(value ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   let pkg = null;
 
+  window.login = async function () {
+    const message = byId('accessMessage');
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST', headers: {'content-type':'application/json'},
+        body: JSON.stringify({password: byId('accessPassword')?.value || ''})
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'تعذر تسجيل الدخول');
+      document.body.classList.add('authenticated');
+      byId('accessPassword').value = '';
+      if (message) message.textContent = 'تم تسجيل الدخول بنجاح.';
+    } catch (error) {
+      if (message) message.textContent = error.message;
+    }
+  };
+
+  async function checkAccess() {
+    const message = byId('accessMessage');
+    try {
+      const response = await fetch('/api/auth-status');
+      const data = await response.json();
+      if (response.ok && data.authenticated) {
+        document.body.classList.add('authenticated');
+        if (message) message.textContent = 'أنت مسجل الدخول.';
+      } else if (response.status === 503) {
+        if (message) message.textContent = data.error || 'أضف APP_ACCESS_PASSWORD في إعدادات Vercel.';
+      } else if (message) {
+        message.textContent = 'أدخل كلمة مرور الاستوديو للمتابعة.';
+      }
+    } catch (error) {
+      if (message) message.textContent = 'تعذر التحقق من الدخول: ' + error.message;
+    }
+  }
   window.createStory = async function () {
     const concept = (byId('story')?.value || '').trim();
     const status = byId('productionStatus');
@@ -196,4 +230,5 @@
       }
     }
   } catch {}
+  checkAccess();
 })();
