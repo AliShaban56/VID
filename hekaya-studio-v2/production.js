@@ -119,5 +119,8 @@
       $('providerStatusUpdated').textContent='آخر فحص: '+new Date(d.checkedAt).toLocaleString('ar-EG');
     }catch(e){root.innerHTML='<div class="progress">'+esc(e.message)+'</div>';}
   };
+  window.refreshMagicKeys=async()=>{const root=$('magicKeysList');if(!root)return;try{const d=await api('/api/magichour-keys',null,'GET');root.innerHTML=(d.keys||[]).map(k=>'<div class="row panel"><span>'+esc(k.label)+' — '+esc(k.masked)+'</span><button class="secondary" onclick="removeMagicKey('+k.index+')">حذف</button></div>').join('')||'<p class="muted">لا توجد مفاتيح محفوظة.</p>';}catch(e){root.textContent=e.message;}};
+  window.addMagicKey=async()=>{const input=$('magicKeyInput');const key=input.value.trim();if(!key)return alert('أدخل المفتاح أولاً');try{await api('/api/magichour-keys',{action:'add',key});input.value='';await refreshMagicKeys();alert('تم حفظ المفتاح مشفرًا');}catch(e){alert(e.message);}};
+  window.removeMagicKey=async(index)=>{if(!confirm('حذف هذا المفتاح؟'))return;try{await api('/api/magichour-keys',{action:'remove',index});await refreshMagicKeys();}catch(e){alert(e.message);}};
   showTab('studio');
 })();
