@@ -1,4 +1,3 @@
-import { requireAccess } from './_auth.js';
 import { init } from './_db.js';
 
 const clamp = (value, min, max, fallback) => {
@@ -9,8 +8,6 @@ const clamp = (value, min, max, fallback) => {
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
-  if (!requireAccess(req, res)) return;
-
   const key = process.env.SHOTSTACK_API_KEY;
   if (!key) return res.status(503).json({ error: 'Add SHOTSTACK_API_KEY to Vercel Environment Variables to enable final video production.' });
 
