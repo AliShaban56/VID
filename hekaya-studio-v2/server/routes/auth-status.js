@@ -1,4 +1,4 @@
-import { hasAccess } from '../api/_auth.js';
+import { hasAccess } from '../../api/_auth.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
