@@ -1,5 +1,5 @@
-import { requireAccess } from '../api/_auth.js';
-import { init } from '../api/_db.js';
+import { requireAccess } from '../../api/_auth.js';
+import { init } from '../../api/_db.js';
 
 export default async function handler(req, res) {
   if (!requireAccess(req, res)) return;
