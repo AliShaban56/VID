@@ -247,16 +247,6 @@
       unlockStudio();
     }catch(e){message.textContent='تعذر الاتصال بالخادم.';}
   };
-  async function initAuth(){
-    try{
-      const response=await fetch('/api/auth-status',{cache:'no-store'});
-      if(response.ok){unlockStudio();return;}
-      if(response.status===503){
-        $('loginMessage').textContent='المنصة مغلقة لحين ضبط APP_ACCESS_PASSWORD في إعدادات Vercel. لا تضف مفاتيح المزود قبل تفعيل الحماية.';
-      }else{
-        $('loginMessage').textContent='أدخل كلمة مرور المنصة للمتابعة.';
-      }
-    }catch(e){$('loginMessage').textContent='تعذر التحقق من جلسة الدخول. حدّث الصفحة.';}
-  }
-  initAuth();
+  // Login screen removed; studio loads directly.
+  unlockStudio();
 })();
