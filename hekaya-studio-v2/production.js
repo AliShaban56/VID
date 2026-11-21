@@ -119,12 +119,12 @@
       const videos=ready.filter(job=>job.type==='video').map(job=>({sceneIndex:job.sceneIndex,durationSeconds:job.durationSeconds,url:job.url}));
       const voices=ready.filter(job=>job.type==='audio'&&job.audioRole==='voice').map(job=>({sceneIndex:job.sceneIndex,start:job.start,url:job.url}));
       const music=ready.find(job=>job.type==='audio'&&job.audioRole==='music');
-      status('اكتمل التوليد في Magic Hour؛ جارٍ تجميع المشاهد في ملف MP4...');
+      status('اكتمل التوليد؛ حكاية ترسل المشاهد إلى محرك التجميع الداخلي...');
       const assembled=await api('/api/render-final-video',{
         action:'assemble',projectId,aspectRatio:$('ratio').value,
         assets:{videos,voices,music:music?{url:music.url}:null}
       });
-      renderId=assembled.renderId;
+      renderId=assembled.renderId;var finalRenderProvider=assembled.provider||'hekaya-renderer';
     }
     if(!renderId)throw new Error('لم يرجع محرك التجميع معرّف الرندر النهائي.');
     $('finalResult').classList.remove('hidden');
@@ -132,7 +132,7 @@
     localSave();
     for(let i=0;i<80;i++){
       await new Promise(resolve=>setTimeout(resolve,5000));
-      const state=await api('/api/final-video-status?id='+encodeURIComponent(renderId),null,'GET');
+      const state=await api('/api/final-video-status?provider='+encodeURIComponent(typeof finalRenderProvider!=='undefined'?finalRenderProvider:'hekaya-renderer')+'&id='+encodeURIComponent(renderId),null,'GET');
       $('renderStatus').textContent='الحالة: '+state.status;
       if(state.status==='done'&&state.videoUrl){
         $('finalResult').innerHTML='<h2>🎞️ الفيديو النهائي</h2><video controls playsinline src="'+esc(state.videoUrl)+'" style="width:100%;max-height:600px"></video><p><a href="'+esc(state.videoUrl)+'" target="_blank" rel="noopener">فتح/تنزيل الفيديو النهائي</a></p>';
@@ -160,13 +160,13 @@
   window.assembleLibraryVideos=async()=>{
     const picked=composerSelection.map(i=>libraryVideoAssets.filter(a=>a.type==='video'&&a.url)[i]).filter(Boolean);
     if(!picked.length){$('composerResult').textContent='اختار فيديو مشهد واحد على الأقل.';return;}
-    $('composerResult').textContent='جارٍ إرسال المشاهد بالترتيب المحدد إلى Shotstack...';
+    $('composerResult').textContent='جارٍ إرسال المشاهد بالترتيب إلى محرك حكاية الداخلي...';
     try{
       const videos=picked.map((a,i)=>({sceneIndex:i,durationSeconds:Number(a.durationSeconds||8),url:a.url}));
       const out=await api('/api/render-final-video',{action:'assemble',projectId:picked[0].projectId||null,aspectRatio:$('composerRatio').value,assets:{videos,voices:[],music:null}});
       if(!out.renderId)throw new Error('لم يرجع Render ID.');
       $('composerResult').innerHTML='<div class="progress">بدأ التجميع. Render ID: '+esc(out.renderId)+'</div>';
-      for(let n=0;n<100;n++){await new Promise(resolve=>setTimeout(resolve,5000));const state=await api('/api/final-video-status?id='+encodeURIComponent(out.renderId),null,'GET');if(state.status==='done'&&state.videoUrl){$('composerResult').innerHTML='<h3>الفيديو النهائي جاهز</h3><video controls playsinline src="'+esc(state.videoUrl)+'" style="width:100%;max-height:600px"></video><p><a href="'+esc(state.videoUrl)+'" download target="_blank">تنزيل / فتح MP4</a></p>';await refreshLibrary();return;}if(state.status==='failed')throw new Error(state.error||'فشل التجميع.');$('composerResult').textContent='حالة التجميع: '+state.status;}
+      for(let n=0;n<100;n++){await new Promise(resolve=>setTimeout(resolve,5000));const state=await api('/api/final-video-status?provider='+encodeURIComponent(out.provider||'hekaya-renderer')+'&id='+encodeURIComponent(out.renderId),null,'GET');if(state.status==='done'&&state.videoUrl){$('composerResult').innerHTML='<h3>الفيديو النهائي جاهز</h3><video controls playsinline src="'+esc(state.videoUrl)+'" style="width:100%;max-height:600px"></video><p><a href="'+esc(state.videoUrl)+'" download target="_blank">تنزيل / فتح MP4</a></p>';await refreshLibrary();return;}if(state.status==='failed')throw new Error(state.error||'فشل التجميع.');$('composerResult').textContent='حالة التجميع: '+state.status;}
       $('composerResult').textContent='التجميع ما زال جاريًا. رقم العملية: '+out.renderId;
     }catch(e){$('composerResult').textContent='فشل التجميع: '+e.message;}
   };
