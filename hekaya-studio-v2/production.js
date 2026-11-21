@@ -1,7 +1,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let packageData = null, projectId = null, scenes = [], images = [], renderId = null;
+  let packageData = null, projectId = null, scenes = [], images = [], renderId = null, libraryVideoAssets = [], composerSelection = [];
   const storageKey = 'hekaya-v3-library';
   function localSave() {
     try {
@@ -148,13 +148,34 @@
     catch(e){status('توقف الإنتاج: '+e.message);}
     finally{$('startBtn').disabled=false;}
   };
+  function renderComposer(){
+    const root=$('composerAssets'); if(!root)return;
+    const videos=libraryVideoAssets.filter(a=>a.type==='video'&&a.url);
+    root.innerHTML=videos.map((a,i)=>'<div class="asset row" style="align-items:flex-start"><label style="flex:1"><input type="checkbox" style="width:auto" '+(composerSelection.includes(i)?'checked':'')+' onchange="toggleComposerAsset('+i+',this.checked)"> '+esc(a.title)+'<p class="muted">'+esc(a.project||'')+'</p></label>'+(composerSelection.includes(i)?'<div class="row"><button class="secondary" onclick="moveComposer('+i+',-1)">↑</button><button class="secondary" onclick="moveComposer('+i+',1)">↓</button></div>':'')+'<video controls src="'+esc(a.url)+'" style="width:180px;max-height:160px"></video></div>').join('')||'<p class="muted">لا توجد فيديوهات مشاهد في المكتبة بعد.</p>';
+    $('composerStatus').textContent=videos.length+' فيديو متاح. المحدد: '+composerSelection.length;
+  }
+  window.toggleComposerAsset=(i,on)=>{if(on&&!composerSelection.includes(i))composerSelection.push(i);if(!on)composerSelection=composerSelection.filter(x=>x!==i);renderComposer();};
+  window.moveComposer=(i,dir)=>{const at=composerSelection.indexOf(i);if(at<0)return;const to=at+dir;if(to<0||to>=composerSelection.length)return;[composerSelection[at],composerSelection[to]]=[composerSelection[to],composerSelection[at]];renderComposer();};
+  window.assembleLibraryVideos=async()=>{
+    const picked=composerSelection.map(i=>libraryVideoAssets.filter(a=>a.type==='video'&&a.url)[i]).filter(Boolean);
+    if(!picked.length){$('composerResult').textContent='اختار فيديو مشهد واحد على الأقل.';return;}
+    $('composerResult').textContent='جارٍ إرسال المشاهد بالترتيب المحدد إلى Shotstack...';
+    try{
+      const videos=picked.map((a,i)=>({sceneIndex:i,durationSeconds:Number(a.durationSeconds||8),url:a.url}));
+      const out=await api('/api/render-final-video',{action:'assemble',projectId:picked[0].projectId||null,aspectRatio:$('composerRatio').value,assets:{videos,voices:[],music:null}});
+      if(!out.renderId)throw new Error('لم يرجع Render ID.');
+      $('composerResult').innerHTML='<div class="progress">بدأ التجميع. Render ID: '+esc(out.renderId)+'</div>';
+      for(let n=0;n<100;n++){await new Promise(resolve=>setTimeout(resolve,5000));const state=await api('/api/final-video-status?id='+encodeURIComponent(out.renderId),null,'GET');if(state.status==='done'&&state.videoUrl){$('composerResult').innerHTML='<h3>الفيديو النهائي جاهز</h3><video controls playsinline src="'+esc(state.videoUrl)+'" style="width:100%;max-height:600px"></video><p><a href="'+esc(state.videoUrl)+'" download target="_blank">تنزيل / فتح MP4</a></p>';await refreshLibrary();return;}if(state.status==='failed')throw new Error(state.error||'فشل التجميع.');$('composerResult').textContent='حالة التجميع: '+state.status;}
+      $('composerResult').textContent='التجميع ما زال جاريًا. رقم العملية: '+out.renderId;
+    }catch(e){$('composerResult').textContent='فشل التجميع: '+e.message;}
+  };
   window.refreshLibrary=async()=>{
     $('libraryStatus').textContent='جارٍ تحميل المكتبة...';
     const root=$('libraryAssets');
     let list=[];
     try{
       const data=await api('/api/library',null,'GET');
-      list=(data.assets||[]);
+      list=(data.assets||[]); libraryVideoAssets=list.filter(a=>a.type==='video'&&a.url); composerSelection=[];
       $('libraryStatus').textContent=list.length+' ملف/عنصر محفوظ في قاعدة البيانات.';
     }catch(e){
       list=JSON.parse(localStorage.getItem(storageKey)||'[]').flatMap(p=>[
@@ -163,7 +184,7 @@
       ]);
       $('libraryStatus').textContent='تعذر قراءة قاعدة البيانات ('+e.message+'). تعرض المكتبة الملفات الموجودة محليًا على هذا الجهاز.';
     }
-    root.innerHTML=list.map(a=>'<article class="asset"><span class="asset-type">'+esc(a.type||'media')+'</span><h3>'+esc(a.title||'ملف')+'</h3>'+(a.type==='video'?'<video controls src="'+esc(a.url)+'"></video>':a.type==='audio'?'<audio controls src="'+esc(a.url)+'" style="width:100%"></audio>':a.type==='image'?'<img src="'+esc(a.url)+'" alt="">':'')+'<p class="muted">'+esc(a.project||'')+'</p>'+(a.excerpt?'<p>'+esc(a.excerpt)+'</p>':'')+(a.url?'<a href="'+esc(a.url)+'" target="_blank" rel="noopener">فتح الملف</a>':'')+'</article>').join('')||'<p class="muted">لا توجد ملفات محفوظة حتى الآن.</p>';
+    renderComposer();\n    root.innerHTML=list.map(a=>'<article class="asset"><span class="asset-type">'+esc(a.type||'media')+'</span><h3>'+esc(a.title||'ملف')+'</h3>'+(a.type==='video'?'<video controls src="'+esc(a.url)+'"></video>':a.type==='audio'?'<audio controls src="'+esc(a.url)+'" style="width:100%"></audio>':a.type==='image'?'<img src="'+esc(a.url)+'" alt="">':'')+'<p class="muted">'+esc(a.project||'')+'</p>'+(a.excerpt?'<p>'+esc(a.excerpt)+'</p>':'')+(a.url?'<a href="'+esc(a.url)+'" target="_blank" rel="noopener">فتح الملف</a>':'')+'</article>').join('')||'<p class="muted">لا توجد ملفات محفوظة حتى الآن.</p>';
   };
   window.refreshProviderStatuses=async()=>{
     const root=$('providerStatusList');root.innerHTML='<div class="progress">جارٍ فحص...</div>';
