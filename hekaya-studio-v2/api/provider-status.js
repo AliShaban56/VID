@@ -34,8 +34,8 @@ async function probe(url, headers, label) {
 }
 
 async function collectStatus(req) {
-  const shotstackKey = process.env.SHOTSTACK_API_KEY;
-  const shotstackEnv = process.env.SHOTSTACK_ENV === 'v1' ? 'v1' : 'stage';
+  const rendererUrl = process.env.HEKAYA_RENDERER_URL;
+  const rendererToken = process.env.HEKAYA_RENDERER_TOKEN || '';
 
   const magicHourPromise = (async () => {
     try {
@@ -49,9 +49,9 @@ async function collectStatus(req) {
     }
   })();
 
-  const shotstackPromise = shotstackKey
-    ? probe('https://api.shotstack.io/edit/' + shotstackEnv + '/models', { 'x-api-key': shotstackKey, Accept: 'application/json' }, 'Shotstack')
-    : Promise.resolve({ state: 'missing', detail: 'يلزم Shotstack لتجميع ملفات الوسائط في MP4 نهائي.' });
+  const rendererPromise = rendererUrl
+    ? probe(String(rendererUrl).replace(/\\/+$/, '') + '/health', { Accept: 'application/json', ...(rendererToken ? { Authorization: 'Bearer ' + rendererToken } : {}) }, 'محرك حكاية الداخلي')
+    : Promise.resolve({ state: 'missing', detail: 'محرك FFmpeg الداخلي يحتاج HEKAYA_RENDERER_URL حتى يتم تشغيل التجميع.' });
 
   const databasePromise = (async () => {
     const config = databaseConfig(req);
@@ -69,8 +69,8 @@ async function collectStatus(req) {
     }
   })();
 
-  const [magicHour, shotstack, database] = await Promise.all([
-    magicHourPromise, shotstackPromise, databasePromise
+  const [magicHour, renderer, database] = await Promise.all([
+    magicHourPromise, rendererPromise, databasePromise
   ]);
 
   return {
@@ -80,10 +80,7 @@ async function collectStatus(req) {
         model: process.env.MAGICHOUR_IMAGE_MODEL || 'z-image-turbo',
         videoModel: process.env.MAGICHOUR_VIDEO_MODEL || 'ltx-2.5'
       }),
-      result('assembly', 'تجميع MP4 النهائي', 'SHOTSTACK_API_KEY', shotstack.state, shotstack.detail, {
-        environment: shotstackEnv === 'stage' ? 'تجريبي Stage' : 'إنتاج V1',
-        model: 'تركيب فقط — لا يولّد وسائط'
-      }),
+      result('assembly', 'محرك تجميع حكاية الداخلي (FFmpeg)', 'HEKAYA_RENDERER_URL + HEKAYA_RENDERER_TOKEN', renderer.state, renderer.detail, { model: 'محرك داخلي — لا يعتمد على Shotstack' }),
       result('database', 'قاعدة البيانات Turso', 'TURSO_DATABASE_URL + TURSO_AUTH_TOKEN', database.state, database.detail)
     ],
     note: 'اختبار الاتصال يتحقق من قبول المفتاح أو اتصال قاعدة البيانات، ولا ينفذ توليد صورة أو فيديو مدفوعًا.'
