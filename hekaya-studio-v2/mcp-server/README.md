@@ -1,33 +1,18 @@
-# Hekaya Studio MCP Integration
+# Hekaya MCP connector prototype
 
-This folder is the planned home for Hekaya's Model Context Protocol (MCP) connector so ChatGPT can call authenticated Hekaya tools directly.
+Endpoint: `/api/mcp` (Vercel function). MCP protocol initialization and tool calls are served over POST JSON-RPC.
 
-## Security and rollout
-- Do not commit credentials, API keys, tokens, or production URLs containing secrets.
-- Use a dedicated Hekaya MCP access token and HTTPS.
-- Enforce tool-level scopes and confirmation for destructive, paid generation, and publishing actions.
-- Keep publishing disabled until separately authorized.
-- Do not deploy this integration until the owner expressly approves deployment.
+## Current tools
+- `hekaya_health`: read-only DB connection check.
+- `hekaya_list_projects`: read projects.
+- `hekaya_get_library`: read projects/scenes/jobs and media URLs.
+- `hekaya_get_project_scenes`: read scenes for a given project ID.
 
-## Planned tool surface
-- `hekaya_health`: read-only connection diagnostics.
-- `hekaya_list_projects`: read-only project listing.
-- `hekaya_create_project`: create project (write).
-- `hekaya_submit_story_package`: send story/scenes (write).
-- `hekaya_generate_scene_media`: trigger paid media generation (write; explicit confirmation).
-- `hekaya_get_job_status`: read-only job status.
-- `hekaya_get_library`: read-only asset listing.
-- `hekaya_assemble_video`: trigger internal renderer (write; confirmation).
-- `hekaya_get_final_video`: retrieve completed render URL (read-only).
-- Publishing tools: intentionally excluded from initial connector and require a separate authorization phase.
+## Authentication and scope
+Current prototype uses a single bearer token via `HEKAYA_MCP_TOKEN`. This is **not OAuth**, not user consent, and not appropriate for public distribution. Do not share or expose this token. Before offering broad ChatGPT connector access, replace it with an OAuth authorization server flow (authorization code + PKCE, dynamic client registration as required by host, token endpoint, consent/approval screen, revocation, scoped tokens and secure persistence). Publishing and paid generation are intentionally not exposed by this read-only prototype.
 
-## Proposed transport and endpoint
-Use MCP Streamable HTTP over HTTPS. The endpoint will be `/api/mcp` or a standalone service, depending on hosting constraints. The server must implement MCP initialize, tool listing, and tool invocation, with authentication and scoped authorization.
+## ChatGPT compatibility
+This endpoint is a prototype and has not been verified through ChatGPT's connector UI. Use the current official ChatGPT MCP connector instructions and test in a development environment first; the endpoint is not certified or guaranteed to connect from first attempt.
 
-## Required environment variables (names only)
-- `HEKAYA_MCP_TOKEN` (dedicated connector credential; never committed)
-- `HEKAYA_RENDERER_URL` (internal renderer endpoint)
-- `HEKAYA_RENDERER_TOKEN` (renderer credential)
-- Existing database and Magic Hour secrets remain server-side only.
-
-This document is a design scaffold only. No server endpoint has been implemented or deployed yet.
+## Hosting
+Set `HEKAYA_MCP_TOKEN` only as a Vercel sensitive environment variable. Do not put secrets in Git. The MCP URL on the Hekaya deployment is `https://hekaya-studio-v3-sigma.vercel.app/api/mcp` only if the deployment serves the project's API route at that path; verify deployment and response before sharing.
