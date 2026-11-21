@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto';
-import { verifyStudioPassword } from '../api/_password.js';
+import { verifyStudioPassword } from '../../api/_password.js';
 
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
