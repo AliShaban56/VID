@@ -1,63 +1,56 @@
 import { init } from './_db.js';
-import { timingSafeEqual } from 'node:crypto';
 
-const tokenValue = () => process.env.HEKAYA_MCP_TOKEN || '';
-function authorized(req) {
-  const expected = tokenValue();
-  const header = String(req.headers?.authorization || '');
-  const supplied = header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!expected || !supplied) return false;
-  const a = Buffer.from(expected);
-  const b = Buffer.from(supplied);
-  return a.length === b.length && timingSafeEqual(a, b);
-}
-const tool = (name, description, inputSchema, readOnly=true) => ({
-  name, description, inputSchema,
-  annotations: { readOnlyHint: readOnly, destructiveHint: false, openWorldHint: false }
-});
 const tools = [
-  tool('hekaya_health', 'Use this read-only tool to test Hekaya MCP authentication and server readiness.', {type:'object',properties:{},additionalProperties:false}),
-  tool('hekaya_list_projects', 'Use this read-only tool to list Hekaya projects from the connected database.', {type:'object',properties:{},additionalProperties:false}),
-  tool('hekaya_get_library', 'Use this read-only tool to retrieve Hekaya project scenes and generated assets.', {type:'object',properties:{},additionalProperties:false})
+ {name:'hekaya_health',description:'Check Hekaya server and database readiness.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true}},
+ {name:'hekaya_list_projects',description:'List saved Hekaya story projects.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true}},
+ {name:'hekaya_get_library',description:'Read the saved library of project scenes, media links and generation jobs.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true}},
+ {name:'hekaya_get_project_scenes',description:'Read scenes for a project by project ID.',inputSchema:{type:'object',properties:{projectId:{type:'string'}},required:['projectId'],additionalProperties:false},annotations:{readOnlyHint:true}}
 ];
-function reply(res, id, result) { return res.status(200).json({jsonrpc:'2.0',id,result}); }
-function err(res,id,code,message) { return res.status(200).json({jsonrpc:'2.0',id,error:{code,message}}); }
-export default async function handler(req,res) {
-  res.setHeader('Cache-Control','no-store');
-  res.setHeader('X-Content-Type-Options','nosniff');
-  res.setHeader('Access-Control-Allow-Origin','https://chatgpt.com');
-  res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type');
-  if(req.method==='OPTIONS') return res.status(204).end();
-  if(req.method!=='POST') return res.status(405).json({error:'Method not allowed'});
-  if(!authorized(req)) return res.status(401).json({error:'Unauthorized MCP access'});
-  const body=req.body||{};
-  const id=body.id;
-  if(body.method==='initialize') return reply(res,id,{protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'Hekaya Studio MCP',version:'0.1.0'}});
-  if(body.method==='notifications/initialized') return res.status(202).end();
-  if(body.method==='tools/list') return reply(res,id,{tools});
-  if(body.method==='tools/call') {
-    const name=body.params?.name;
-    try {
-      if(name==='hekaya_health') return reply(res,id,{content:[{type:'text',text:'Hekaya MCP authenticated. Database connectivity is checked on database tools.'}]});
-      if(name==='hekaya_list_projects') {
-        const d=await init(req);
-        const result=await d.execute('SELECT id,title,updated_at FROM projects ORDER BY updated_at DESC LIMIT 100');
-        return reply(res,id,{content:[{type:'text',text:JSON.stringify(result.rows)}],structuredContent:{projects:result.rows}});
-      }
-      if(name==='hekaya_get_library') {
-        const d=await init(req);
-        const [projects,scenes,jobs]=await Promise.all([
-          d.execute('SELECT id,title,updated_at FROM projects ORDER BY updated_at DESC LIMIT 100'),
-          d.execute('SELECT id,project_id,position,text,image_prompt,video_prompt,image_url,video_url,status,updated_at FROM scenes ORDER BY project_id,position LIMIT 500'),
-          d.execute('SELECT id,project_id,scene_id,kind,model,status,result_url,error,created_at FROM generation_jobs ORDER BY created_at DESC LIMIT 500')
-        ]);
-        const result={projects:projects.rows||[],scenes:scenes.rows||[],jobs:jobs.rows||[]};
-        return reply(res,id,{content:[{type:'text',text:JSON.stringify(result)}],structuredContent:result});
-      }
-      return err(res,id,-32601,'Unknown tool');
-    } catch(e) { return err(res,id,-32000,e?.message||'Tool failed'); }
+function response(res,id,result){return res.status(200).json({jsonrpc:'2.0',id,result});}
+function error(res,id,code,message){return res.status(200).json({jsonrpc:'2.0',id,error:{code,message}});}
+function textResult(data){return {content:[{type:'text',text:JSON.stringify(data)}],structuredContent:data};}
+export default async function handler(req,res){
+ res.setHeader('Cache-Control','no-store');
+ res.setHeader('X-Content-Type-Options','nosniff');
+ res.setHeader('Access-Control-Allow-Origin','https://chatgpt.com');
+ res.setHeader('Access-Control-Allow-Methods','POST, OPTIONS');
+ res.setHeader('Access-Control-Allow-Headers','Authorization, Content-Type, MCP-Protocol-Version');
+ if(req.method==='OPTIONS')return res.status(204).end();
+ if(req.method!=='POST')return res.status(405).json({error:'Method not allowed'});
+ // This bearer-token implementation is a temporary, private connector prototype,
+ // not OAuth and not suitable for broad distribution. Rotate the token if exposed.
+ const expected=process.env.HEKAYA_MCP_TOKEN||'',auth=String(req.headers?.authorization||'');
+ if(!expected||auth!=='Bearer '+expected)return res.status(401).json({error:'Unauthorized'});
+ const b=req.body||{},id=b.id;
+ if(b.method==='initialize')return response(res,id,{protocolVersion:'2025-03-26',capabilities:{tools:{}},serverInfo:{name:'Hekaya Studio MCP',version:'0.2.0'}});
+ if(b.method==='notifications/initialized')return res.status(202).end();
+ if(b.method==='ping')return response(res,id,{});
+ if(b.method==='tools/list')return response(res,id,{tools});
+ if(b.method!=='tools/call')return error(res,id,-32601,'Method not supported');
+ const name=b.params?.name,args=b.params?.arguments||{};
+ try{
+  if(name==='hekaya_health'){
+   const d=await init(req);await d.execute('SELECT 1');
+   return response(res,id,textResult({server:'Hekaya MCP',database:'connected'}));
   }
-  if(body.method==='ping') return reply(res,id,{});
-  return err(res,id,-32601,'Method not supported');
+  const d=await init(req);
+  if(name==='hekaya_list_projects'){
+   const r=await d.execute('SELECT id,title,substr(story,1,1200) AS story,updated_at FROM projects ORDER BY updated_at DESC LIMIT 50');
+   return response(res,id,textResult({projects:r.rows||[]}));
+  }
+  if(name==='hekaya_get_library'){
+   const [p,s,j]=await Promise.all([
+    d.execute('SELECT id,title,updated_at FROM projects ORDER BY updated_at DESC LIMIT 50'),
+    d.execute('SELECT id,project_id,position,text,image_prompt,video_prompt,image_url,video_url,status,updated_at FROM scenes ORDER BY project_id,position LIMIT 300'),
+    d.execute('SELECT id,project_id,scene_id,kind,model,status,result_url,error,created_at FROM generation_jobs ORDER BY created_at DESC LIMIT 300')
+   ]);
+   return response(res,id,textResult({projects:p.rows||[],scenes:s.rows||[],jobs:j.rows||[]}));
+  }
+  if(name==='hekaya_get_project_scenes'){
+   const pid=String(args.projectId||'').trim();if(!pid||pid.length>200)return error(res,id,-32602,'Invalid projectId');
+   const r=await d.execute({sql:'SELECT id,project_id,position,text,image_prompt,video_prompt,image_url,video_url,status,updated_at FROM scenes WHERE project_id=? ORDER BY position LIMIT 100',args:[pid]});
+   return response(res,id,textResult({projectId:pid,scenes:r.rows||[]}));
+  }
+  return error(res,id,-32601,'Unknown tool');
+ }catch(e){return error(res,id,-32000,'Hekaya operation failed: '+String(e?.message||e).slice(0,300));}
 }
