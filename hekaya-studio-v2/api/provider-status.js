@@ -34,8 +34,6 @@ async function probe(url, headers, label) {
 }
 
 async function collectStatus(req) {
-  const aiKey = process.env.AI_API_KEY || process.env.OPENAI_API_KEY;
-  const aiBase = (process.env.AI_BASE_URL || 'https://api.openai.com').replace(/\/+$/, '');
   const shotstackKey = process.env.SHOTSTACK_API_KEY;
   const shotstackEnv = process.env.SHOTSTACK_ENV === 'v1' ? 'v1' : 'stage';
 
@@ -50,10 +48,6 @@ async function collectStatus(req) {
       return { state: 'error', detail: error?.message || 'تعذر الاتصال بـ Magic Hour.' };
     }
   })();
-
-  const aiPromise = aiKey
-    ? probe(aiBase + '/v1/models', { Authorization: 'Bearer ' + aiKey, Accept: 'application/json' }, 'محرك كتابة القصص')
-    : Promise.resolve({ state: 'missing', detail: 'لم تتم إضافة مفتاح كتابة القصص بعد.' });
 
   const shotstackPromise = shotstackKey
     ? probe('https://api.shotstack.io/edit/' + shotstackEnv + '/models', { 'x-api-key': shotstackKey, Accept: 'application/json' }, 'Shotstack')
@@ -75,14 +69,13 @@ async function collectStatus(req) {
     }
   })();
 
-  const [ai, magicHour, shotstack, database] = await Promise.all([
-    aiPromise, magicHourPromise, shotstackPromise, databasePromise
+  const [magicHour, shotstack, database] = await Promise.all([
+    magicHourPromise, shotstackPromise, databasePromise
   ]);
 
   return {
     checkedAt: new Date().toISOString(),
     providers: [
-      result('story', 'محرك كتابة القصص', 'AI_API_KEY أو OPENAI_API_KEY', ai.state, ai.detail, { model: process.env.AI_TEXT_MODEL || 'gpt-4o-mini' }),
       result('magichour', 'Magic Hour — الصور والفيديو والصوت والموسيقى', 'MAGICHOUR_API_KEY / الخزنة المشفرة', magicHour.state, magicHour.detail, {
         model: process.env.MAGICHOUR_IMAGE_MODEL || 'z-image-turbo',
         videoModel: process.env.MAGICHOUR_VIDEO_MODEL || 'ltx-2.5'
