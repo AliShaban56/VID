@@ -21,7 +21,7 @@ const routes = {
 
 export default async function handler(req,res) {
   const pathname = new URL(req.url || '/', 'https://hekaya.invalid').pathname;
-  const path = pathname.replace(/^\\/api\\/?/, '').replace(/\\/$/, '');
+  const path = pathname.replace(/^\/api\/?/, '').replace(/\/$/, '');
   const route = routes[path];
   if (!route) return res.status(404).json({error:'API route not found'});
   try { return await route(req,res); }
