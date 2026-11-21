@@ -31,6 +31,24 @@ export default async function handler(req, res) {
     }
   }
 
+  if (String(req.query?.provider || '') === 'hekaya-renderer') {
+    const renderer = String(process.env.HEKAYA_RENDERER_URL || '').replace(/\\/+$/, '');
+    const token = process.env.HEKAYA_RENDERER_TOKEN || '';
+    const id = String(req.query?.id || '');
+    if (!renderer) return res.status(503).json({ error:'محرك حكاية الداخلي غير مضبوط.' });
+    if (!/^[a-zA-Z0-9_-]{8,100}$/.test(id)) return res.status(400).json({ error:'معرّف الرندر غير صحيح.' });
+    try {
+      const upstream = await fetch(renderer + '/render/' + encodeURIComponent(id), { headers:{ Accept:'application/json', ...(token ? { Authorization:'Bearer '+token } : {}) }, signal:AbortSignal.timeout(15000), cache:'no-store' });
+      const data = await upstream.json().catch(()=>({}));
+      if (!upstream.ok) return res.status(upstream.status).json({ error:data?.error || data?.message || 'تعذر قراءة حالة محرك حكاية.' });
+      const state = String(data.status || 'unknown').toLowerCase();
+      const videoUrl = data.videoUrl || data.url || null;
+      const error = data.error || null;
+      try { const db=await init(req); await db.execute({sql:'UPDATE generation_jobs SET status=?,result_url=?,error=? WHERE id=?',args:[state,videoUrl||'',error||'',id]}); } catch {}
+      return res.status(200).json({ renderId:id, status:state, videoUrl:state==='done'?videoUrl:null, error });
+    } catch(error) { return res.status(502).json({ error:'تعذر الاتصال بمحرك حكاية الداخلي.' }); }
+  }
+
   const key = process.env.SHOTSTACK_API_KEY;
   if (!key) return res.status(503).json({ error: 'أضف SHOTSTACK_API_KEY لتركيب الفيديو النهائي.' });
   const id = String(req.query?.id || '');
