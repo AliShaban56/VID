@@ -1,7 +1,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-  let packageData = null, projectId = null, scenes = [], images = [], renderId = null, libraryVideoAssets = [], composerSelection = [];
+  let packageData = null, projectId = null, scenes = [], images = [], renderId = null, libraryVideoAssets = [], composerSelection = [], storyPackageImported = false;
   const storageKey = 'hekaya-v3-library';
   function localSave() {
     try {
@@ -47,6 +47,7 @@
     localSave();
   }
   async function makeStory(){
+    if(storyPackageImported&&packageData&&scenes.length){storyPackageImported=false;status('استخدام حزمة القصة التي تم استيرادها، دون استدعاء محرك كتابة...');await saveProjectAndScenes();return;}
     const concept=$('concept').value.trim();if(!concept)throw new Error('اكتب فكرة القصة أولاً.');
     status('حكاية تكتب القصة وتجهز خطة الإنتاج...');
     packageData=await api('/api/create-story',{concept,language:'Arabic',genre:'دراما مشوقة',durationSeconds:Number($('duration').value),sceneCount:Number($('sceneCount').value),visualStyle:$('style').value,audience:'عام'});
@@ -54,7 +55,7 @@
     renderStory();renderScenes();await saveProjectAndScenes();
     status('تمت كتابة القصة وتقسيم المشاهد. '+(packageData.database?.warning||''));
   }
-  window.generateOnlyStory=async()=>{try{await makeStory();}catch(e){status(e.message);}};
+  window.importStoryPackage=async()=>{const box=$('storyPackageImport'),msg=$('importStatus');msg.classList.remove('hidden');try{const p=JSON.parse(box.value);if(!p||!Array.isArray(p.scenes)||!p.scenes.length)throw new Error('الحزمة تحتاج قائمة scenes.');packageData=p;scenes=p.scenes.map((s,i)=>({...s,id:s.id||'scene-'+(i+1),position:i,durationSeconds:Number(s.durationSeconds)||8}));projectId=p.database?.projectId||null;images=[];storyPackageImported=true;renderStory();renderScenes();await saveProjectAndScenes();msg.textContent='تم تحميل القصة ('+scenes.length+' مشاهد) وحفظها. زر الإنتاج الكامل سيستخدمها مباشرة دون توليد قصة جديدة.';}catch(e){msg.textContent='تعذر تحميل الحزمة: '+e.message;}};\n  window.generateOnlyStory=async()=>{try{await makeStory();}catch(e){status(e.message);}};
   window.generateSceneImage=async(index)=>{
     const s=scenes[index];if(!s)return;
     status('إرسال صورة المشهد '+(index+1)+' إلى Magic Hour...');
