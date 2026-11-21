@@ -1,5 +1,5 @@
-import { requireAccess } from '../api/_auth.js';
-import { init, connectDatabase, setDatabaseCookie, clearDatabaseCookie } from '../api/_db.js';
+import { requireAccess } from '../../api/_auth.js';
+import { init, connectDatabase, setDatabaseCookie, clearDatabaseCookie } from '../../api/_db.js';
 
 function sameOrigin(req) {
   const origin = req.headers?.origin;
