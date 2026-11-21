@@ -1,6 +1,6 @@
-import { requireAccess } from '../api/_auth.js';
-import { init } from '../api/_db.js';
-import { magicHourRequest } from '../api/_magichour.js';
+import { requireAccess } from '../../api/_auth.js';
+import { init } from '../../api/_db.js';
+import { magicHourRequest } from '../../api/_magichour.js';
 
 const clamp = (value, min, max, fallback) => {
   const n = Number(value);
