@@ -1,5 +1,5 @@
-import { requireAccess } from '../api/_auth.js';
-import { init } from '../api/_db.js';
+import { requireAccess } from '../../api/_auth.js';
+import { init } from '../../api/_db.js';
 
 function parseJson(value) {
   if (typeof value !== 'string') throw new Error('The text model returned an empty response.');
