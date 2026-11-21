@@ -1,6 +1,6 @@
-import { db, databaseConfig } from '../api/_db.js';
-import { requireAccess } from '../api/_auth.js';
-import { handleMagicHourKeys, magicHourRequest, magicHourKeysConfigured } from '../api/_magichour.js';
+import { db, databaseConfig } from '../../api/_db.js';
+import { requireAccess } from '../../api/_auth.js';
+import { handleMagicHourKeys, magicHourRequest, magicHourKeysConfigured } from '../../api/_magichour.js';
 
 function result(id, label, env, state, detail, extra = {}) {
   return { id, label, env, state, detail, ...extra };
