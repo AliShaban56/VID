@@ -1,4 +1,4 @@
-import { init } from '../api/_db.js';
+import { init } from '../../api/_db.js';
 
 const tools = [
  {name:'hekaya_health',description:'Check Hekaya server and database readiness.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true}},
